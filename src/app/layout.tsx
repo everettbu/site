@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
-import PasswordGate from "@/components/PasswordGate";
+
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "My Site",
+  title: "Everett Butler",
   description: "",
 };
 
@@ -14,10 +16,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
-        <PasswordGate>
-          {children}
-        </PasswordGate>
+      <body className={`${inter.className} bg-white`}>
+        {children}
       </body>
     </html>
   );
