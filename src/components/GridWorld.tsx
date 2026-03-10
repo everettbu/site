@@ -63,8 +63,21 @@ function RoomView({
   const Component = tileComponents[roomId];
   if (!Component) return null;
   return (
-    <div className="w-[100vw] h-[100dvh]">
+    <div className="relative w-[100vw] h-[100dvh]">
       <Component onMove={onMove} />
+      {/* eslint-disable @next/next/no-img-element */}
+      {(roomId === "home" || roomId === "about") && (
+        <img src="/bridges/bridge-south.png" alt="" className="absolute bottom-0 left-1/2 -translate-x-1/2 pointer-events-none" style={{ imageRendering: "pixelated", width: 82, height: 57 }} />
+      )}
+      {(roomId === "home" || roomId === "media") && (
+        <img src="/bridges/bridge-north.png" alt="" className="absolute top-0 left-1/2 -translate-x-1/2 pointer-events-none" style={{ imageRendering: "pixelated", width: 82, height: 57 }} />
+      )}
+      {(roomId === "home" || roomId === "library") && (
+        <img src="/bridges/bridge-east.png" alt="" className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" style={{ imageRendering: "pixelated", width: 59, height: 82 }} />
+      )}
+      {(roomId === "home" || roomId === "projects") && (
+        <img src="/bridges/bridge-west.png" alt="" className="absolute left-0 top-1/2 -translate-y-1/2 pointer-events-none" style={{ imageRendering: "pixelated", width: 57, height: 82 }} />
+      )}
     </div>
   );
 }
