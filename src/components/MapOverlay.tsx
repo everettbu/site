@@ -11,19 +11,25 @@ interface MapOverlayProps {
   onNavigate: (roomId: RoomId) => void;
 }
 
+// Single GAP drives everything. Home edges = 2*GAP (span intermediate rooms).
+// All leaf edges = GAP. Nodes are square so visible edges are equal both axes.
+const GAP = 17;
+const CX = 50;
+const CY = 40;
+
 const ROOM_POSITIONS: Record<string, { x: number; y: number }> = {
-  home:           { x: 50, y: 42 },
-  about:          { x: 50, y: 18 },
-  library:        { x: 30, y: 42 },
-  media:          { x: 50, y: 58 },
-  projects:       { x: 70, y: 42 },
-  guestbook:      { x: 30, y: 18 },
-  "album-shelf":  { x: 30, y: 30 },
-  "book-shelf":   { x: 12, y: 42 },
-  "world-map":    { x: 30, y: 50 },
-  montages:       { x: 70, y: 58 },
-  collections:    { x: 30, y: 58 },
-  "photo-reel":   { x: 50, y: 72 },
+  home:           { x: CX,               y: CY },
+  about:          { x: CX,               y: CY - 2 * GAP },
+  library:        { x: CX - 2 * GAP,     y: CY },
+  media:          { x: CX,               y: CY + 2 * GAP },
+  projects:       { x: CX + 2 * GAP,     y: CY },
+  guestbook:      { x: CX - GAP,         y: CY - 2 * GAP },
+  "album-shelf":  { x: CX - 2 * GAP,     y: CY - GAP },
+  "book-shelf":   { x: CX - 3 * GAP,     y: CY },
+  "world-map":    { x: CX - 2 * GAP,     y: CY + GAP },
+  montages:       { x: CX + GAP,         y: CY + 2 * GAP },
+  collections:    { x: CX - 2 * GAP,     y: CY + 2 * GAP },
+  "photo-reel":   { x: CX,               y: CY + 3 * GAP },
 };
 
 function getEdges(): [string, string][] {
@@ -79,68 +85,65 @@ export default function MapOverlay({
         >
           {/* Close button */}
           <button
-            className="absolute top-6 right-6 text-neutral-400 hover:text-neutral-700 transition-colors text-sm tracking-widest uppercase font-light"
+            className="absolute top-6 right-6 text-neutral-400 hover:text-neutral-700 transition-colors text-sm tracking-widest uppercase font-light z-10"
             onClick={onClose}
           >
             Close
           </button>
 
-          {/* SVG edges */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none">
-            {edges.map(([a, b]) => {
-              const posA = ROOM_POSITIONS[a];
-              const posB = ROOM_POSITIONS[b];
-              if (!posA || !posB) return null;
-              return (
-                <line
-                  key={`${a}-${b}`}
-                  x1={`${posA.x}%`}
-                  y1={`${posA.y}%`}
-                  x2={`${posB.x}%`}
-                  y2={`${posB.y}%`}
-                  stroke="currentColor"
-                  className="text-neutral-300"
-                  strokeWidth="1"
-                />
-              );
-            })}
-          </svg>
+          {/* Square container — equal % = equal pixels in both axes */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="relative aspect-square h-full max-w-full">
+              {/* Edges — center-to-center, masked by opaque node backgrounds */}
+              <svg className="absolute inset-0 w-full h-full pointer-events-none">
+                {edges.map(([a, b]) => {
+                  const posA = ROOM_POSITIONS[a];
+                  const posB = ROOM_POSITIONS[b];
+                  if (!posA || !posB) return null;
 
-          {/* Room nodes */}
-          {Object.entries(ROOM_POSITIONS).map(([roomId, pos]) => {
-            const room = rooms[roomId];
-            if (!room) return null;
-            const isCurrent = roomId === currentRoom;
+                  return (
+                    <line
+                      key={`${a}-${b}`}
+                      x1={`${posA.x}%`}
+                      y1={`${posA.y}%`}
+                      x2={`${posB.x}%`}
+                      y2={`${posB.y}%`}
+                      stroke="currentColor"
+                      className="text-neutral-300"
+                      strokeWidth="1.5"
+                    />
+                  );
+                })}
+              </svg>
 
-            return (
-              <button
-                key={roomId}
-                className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1 group"
-                style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onNavigate(roomId);
-                }}
-              >
-                <span
-                  className={`w-3 h-3 rounded-full transition-colors ${
-                    isCurrent
-                      ? "bg-neutral-900"
-                      : "bg-neutral-300 group-hover:bg-neutral-600"
-                  }`}
-                />
-                <span
-                  className={`text-[10px] tracking-widest uppercase whitespace-nowrap ${
-                    isCurrent
-                      ? "font-medium text-neutral-900"
-                      : "font-light text-neutral-400"
-                  }`}
-                >
-                  {room.label}
-                </span>
-              </button>
-            );
-          })}
+              {/* Room nodes — rounded rectangles with opaque backgrounds */}
+              {Object.entries(ROOM_POSITIONS).map(([roomId, pos]) => {
+                const room = rooms[roomId];
+                if (!room) return null;
+                const isCurrent = roomId === currentRoom;
+
+                return (
+                  <button
+                    key={roomId}
+                    className={`absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center w-20 h-20 rounded-lg border transition-colors cursor-pointer ${
+                      isCurrent
+                        ? "bg-neutral-900 border-neutral-900 text-white"
+                        : "bg-white border-neutral-300 text-neutral-400 hover:border-neutral-500 hover:text-neutral-600"
+                    }`}
+                    style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onNavigate(roomId);
+                    }}
+                  >
+                    <span className="text-[10px] tracking-widest uppercase font-light">
+                      {room.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </motion.div>
       )}
     </AnimatePresence>
