@@ -72,17 +72,15 @@ export function useGridNavigation(options?: { disabled?: boolean }) {
 
   const moveTo = useCallback(
     (targetRoom: RoomId) => {
-      if (isAnimatingRef.current) return;
       if (currentRoom === targetRoom) return;
       if (!rooms[targetRoom]) return;
 
       if (!hasMoved) setHasMoved(true);
 
-      isAnimatingRef.current = true;
-      setIsAnimating(true);
-      setPreviousRoom(currentRoom);
-      setTransitionDirection(null); // crossfade for direct navigation
+      // Instant jump — no animation
       setCurrentRoom(targetRoom);
+      setInitialLoad(true);
+      requestAnimationFrame(() => setInitialLoad(false));
 
       const hash = rooms[targetRoom].hash;
       window.history.replaceState(null, "", hash || window.location.pathname);

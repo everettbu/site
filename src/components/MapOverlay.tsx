@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { RoomId, rooms } from "@/lib/grid";
 
@@ -56,6 +56,8 @@ export default function MapOverlay({
   onClose,
   onNavigate,
 }: MapOverlayProps) {
+  const [zoom, setZoom] = useState(1);
+
   const handleEscape = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -63,11 +65,25 @@ export default function MapOverlay({
     [onClose]
   );
 
+  const handleWheel = useCallback((e: WheelEvent) => {
+    e.preventDefault();
+    setZoom((z) => Math.min(2, Math.max(0.3, z - e.deltaY * 0.001)));
+  }, []);
+
   useEffect(() => {
     if (!isOpen) return;
     window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [isOpen, handleEscape]);
+    window.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      window.removeEventListener("keydown", handleEscape);
+      window.removeEventListener("wheel", handleWheel);
+    };
+  }, [isOpen, handleEscape, handleWheel]);
+
+  // Reset zoom when opening
+  useEffect(() => {
+    if (isOpen) setZoom(1);
+  }, [isOpen]);
 
   const edges = getEdges();
 
@@ -81,7 +97,6 @@ export default function MapOverlay({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
-          onClick={onClose}
         >
           {/* Close button */}
           <button
@@ -93,7 +108,10 @@ export default function MapOverlay({
 
           {/* Square container — equal % = equal pixels in both axes */}
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="relative aspect-square h-full max-w-full">
+            <div
+              className="relative aspect-square h-full max-w-full transition-transform duration-150 ease-out"
+              style={{ transform: `scale(${zoom})` }}
+            >
               {/* Edges — center-to-center, masked by opaque node backgrounds */}
               <svg className="absolute inset-0 w-full h-full pointer-events-none">
                 {edges.map(([a, b]) => {
@@ -125,7 +143,7 @@ export default function MapOverlay({
                 return (
                   <button
                     key={roomId}
-                    className={`absolute -translate-x-1/2 -translate-y-1/2 flex items-center justify-center w-20 h-20 rounded-lg border transition-colors cursor-pointer ${
+                    className={`absolute z-0 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center w-24 h-24 rounded-lg border transition-colors cursor-pointer ${
                       isCurrent
                         ? "bg-neutral-900 border-neutral-900 text-white"
                         : "bg-white border-neutral-300 text-neutral-400 hover:border-neutral-500 hover:text-neutral-600"
