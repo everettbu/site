@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { animate, useReducedMotion, Easing } from "motion/react";
-import { Direction } from "./grid";
+import { Direction, isVertical } from "./grid";
 import { Rect, WATER, deckSpan, bridgeRailings, waterRects } from "./bridges";
 import { TRANSITION_EASE } from "./useGridNavigation";
 import { RoomProps } from "./roomProps";
@@ -55,7 +55,6 @@ interface Body {
   sy: number;
 }
 
-const isVertical = (d: Direction) => d === "up" || d === "down";
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 /**
@@ -115,7 +114,8 @@ export function useSpriteMovement(
   // Latest room/callbacks without re-subscribing listeners
   const optionsRef = useRef(options);
   const reducedRef = useRef(reducedMotion);
-  useEffect(() => {
+  // Layout effect: in place before the next frame, so a tick never sees the previous room's options
+  useLayoutEffect(() => {
     optionsRef.current = options;
     reducedRef.current = reducedMotion;
   });
@@ -131,12 +131,18 @@ export function useSpriteMovement(
 
   // Start in the centre — where landings and H put him, and in line with the side bridge decks
   useLayoutEffect(() => {
-    body.current.x = Math.round((window.innerWidth - width) / 2);
-    body.current.y = Math.round((window.innerHeight - height) / 2);
+    const c = centre();
+    body.current.x = Math.round(c.x);
+    body.current.y = Math.round(c.y);
     apply();
     setReady(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** Where he stands in the middle of the room — spawn, landings and H. */
+  function centre() {
+    return { x: (window.innerWidth - width) / 2, y: (window.innerHeight - height) / 2 };
+  }
 
   function apply() {
     const b = body.current;
@@ -251,7 +257,7 @@ export function useSpriteMovement(
       endBridge(true);
     } else {
       // Whole pixels: a fractional pan blurs the seams between rooms into light lines
-      camera.current[g.axis] = Math.round(g.sign * bridgeCamera(Math.max(t, 0), g.length, g.sweep));
+      camera.current[g.axis] = Math.round(g.sign * bridgeCamera(t, g.length, g.sweep));
       optionsRef.current?.bridge?.camera(camera.current[g.axis]);
     }
   }
@@ -491,8 +497,8 @@ export function useSpriteMovement(
     startBridge(direction, gap);
     const g = bridgeGeometry(direction, gap);
     const b = body.current;
-    const centre = { x: (window.innerWidth - width) / 2, y: (window.innerHeight - height) / 2 };
-    const landing = { ...centre, [g.axis]: centre[g.axis] + g.sign * g.sweep }; // in this room's coordinates
+    const c = centre();
+    const landing = { ...c, [g.axis]: c[g.axis] + g.sign * g.sweep }; // in this room's coordinates
     const distance = Math.hypot(landing.x - b.x, landing.y - b.y);
     const lift = b.z;
     const cruise = isVertical(direction) ? FLY_HEIGHT : FLY_HEIGHT * 0.6;
@@ -506,8 +512,7 @@ export function useSpriteMovement(
     });
 
     // Land in the middle of the next room — measured now, in case the window changed size mid-flight
-    b.x = (window.innerWidth - width) / 2;
-    b.y = (window.innerHeight - height) / 2;
+    Object.assign(b, centre());
     endBridge(true);
     apply();
   }
@@ -516,13 +521,9 @@ export function useSpriteMovement(
   async function carryOn(direction: Direction) {
     await glideAcross(direction);
 
-    const centre = {
-      x: (window.innerWidth - width) / 2,
-      y: (window.innerHeight - height) / 2,
-    };
     const { action, facing } = poseRef.current;
     const lift = body.current.z;
-    await tween(centre, 0.6, "easeOut", (t, ms) => {
+    await tween(centre(), 0.6, "easeOut", (t, ms) => {
       body.current.z = lift * (1 - t * t); // drift down, touching down at the end
       if (action === "tumble") updatePose({ facing, action, step: Math.floor(ms / FLAIL_MS) });
     });
@@ -571,7 +572,7 @@ export function useSpriteMovement(
     scripted.current = true;
     updatePose({ facing: "down", action: "idle", step: 0 });
     await tween(
-      { x: (window.innerWidth - width) / 2, y: (window.innerHeight - height) / 2 },
+      centre(),
       optionsRef.current?.exitDuration ?? 0,
       TRANSITION_EASE
     );

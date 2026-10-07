@@ -1,4 +1,4 @@
-import { Direction, RoomId, rooms } from "@/lib/grid";
+import { Direction, RoomId, rooms, isVertical } from "@/lib/grid";
 import { BRIDGE_GAP, BRIDGE_SPAN } from "@/lib/bridges";
 import Water from "./Water";
 
@@ -18,7 +18,7 @@ const TOWARDS: Record<Direction, string> = { right: "to right", left: "to left",
  * matches the room it meets.
  */
 export default function BridgeGap({ direction, from, to }: { direction: Direction; from: RoomId; to: RoomId }) {
-  const vertical = direction === "up" || direction === "down";
+  const vertical = isVertical(direction);
   const span = vertical ? BRIDGE_SPAN.vertical : BRIDGE_SPAN.horizontal;
   const tint = (room: RoomId) => rooms[room].tint ?? "transparent";
   return (

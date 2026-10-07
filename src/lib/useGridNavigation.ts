@@ -19,12 +19,15 @@ export const TRANSITION_EASE = [0.25, 0.1, 0.25, 1.0] as const;
 
 export function useGridNavigation(options?: {
   disabled?: boolean;
+  /** Blocks room changes from every caller (keys, labels, home button) — e.g. while walking a long bridge */
+  locked?: boolean;
   /** Handles swipes / scrolls instead of moving rooms directly (the sprite launches) */
   onSwipe?: (direction: Direction) => void;
   /** Called on every home request (H / home button), even when already home */
   onHome?: () => void;
 }) {
   const disabled = options?.disabled ?? false;
+  const locked = options?.locked ?? false;
   const onSwipe = options?.onSwipe;
   const onHome = options?.onHome;
   const reducedMotion = useReducedMotion();
@@ -47,7 +50,7 @@ export function useGridNavigation(options?: {
   /** Returns true if a transition started. */
   const move = useCallback(
     (direction: Direction): boolean => {
-      if (isAnimatingRef.current) return false;
+      if (locked || isAnimatingRef.current) return false;
 
       const next = getNextRoom(currentRoom, direction);
       if (!next) return false;
@@ -64,11 +67,11 @@ export function useGridNavigation(options?: {
       window.history.replaceState(null, "", hash || window.location.pathname);
       return true;
     },
-    [currentRoom, hasMoved]
+    [currentRoom, hasMoved, locked]
   );
 
   const moveToHome = useCallback(() => {
-    if (isAnimatingRef.current) return;
+    if (locked || isAnimatingRef.current) return;
     onHome?.();
     if (currentRoom === DEFAULT_ROOM) return;
 
@@ -80,7 +83,7 @@ export function useGridNavigation(options?: {
     setTransitionDirection(null); // null signals crossfade
     setCurrentRoom(DEFAULT_ROOM);
     window.history.replaceState(null, "", window.location.pathname);
-  }, [currentRoom, hasMoved, onHome]);
+  }, [currentRoom, hasMoved, onHome, locked]);
 
   const moveTo = useCallback(
     (targetRoom: RoomId) => {

@@ -2,6 +2,10 @@ export type Direction = "up" | "down" | "left" | "right";
 
 export type RoomId = string;
 
+export const OPPOSITE: Record<Direction, Direction> = { up: "down", down: "up", left: "right", right: "left" };
+
+export const isVertical = (d: Direction) => d === "up" || d === "down";
+
 export interface RoomConfig {
   id: RoomId;
   label: string;

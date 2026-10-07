@@ -1,4 +1,4 @@
-import { Direction, RoomId, rooms } from "./grid";
+import { Direction, RoomId, rooms, OPPOSITE, isVertical } from "./grid";
 import { PIXEL_SCALE } from "./pixelArt";
 
 export interface Rect {
@@ -19,7 +19,6 @@ export const BRIDGES: Record<Direction, { src: string; width: number; height: nu
 const SPAN = 82; // length along the edge — shared by every bridge
 const POST = 12; // railing on each side of the deck
 
-const isVertical = (edge: Direction) => edge === "up" || edge === "down";
 
 /** The whole bridge, railings included, measured along the edge. */
 export function bridgeSpan(edge: Direction, vw: number, vh: number): [number, number] {
@@ -75,8 +74,6 @@ export function waterRects(edges: Direction[], exits: Direction[], vw: number, v
 
 /** Open water between two rooms whose facing edges are both wet — crossed by a long bridge. */
 export const BRIDGE_GAP = 5 * WATER;
-
-const OPPOSITE: Record<Direction, Direction> = { up: "down", down: "up", left: "right", right: "left" };
 
 /** How far apart a room and its neighbour in `direction` are: BRIDGE_GAP across water, else 0. */
 export function crossingGap(roomId: RoomId, direction: Direction) {
