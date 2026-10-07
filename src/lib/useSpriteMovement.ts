@@ -3,7 +3,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { animate, useReducedMotion, Easing } from "motion/react";
 import { Direction } from "./grid";
-import { Rect, deckSpan, bridgeRailings } from "./bridges";
+import { Rect, WATER, deckSpan, bridgeRailings, waterRects } from "./bridges";
 import { TRANSITION_EASE } from "./useGridNavigation";
 
 const SPEED = 260; // walking, px per second
@@ -52,7 +52,8 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
  * swipe) — a superhero flight up/down, or a knock-back left/right.
  *
  * Screen edges are walls; the only way out is across a bridge deck on one of
- * the room's `exits`. Bridge railings collide with the sprite's feet.
+ * the room's `exits`. Bridge railings — and, around an island room, the
+ * water — collide with the sprite's feet.
  * Leaving calls `onExit`; if that starts a room transition, the sprite glides
  * to the opposite edge in step with the room slide.
  *
@@ -64,6 +65,7 @@ export function useSpriteMovement(
   options?: {
     disabled?: boolean;
     exits?: Direction[];
+    water?: Direction[]; // edges bordered by water — solid to walk on
     onExit?: (direction: Direction) => boolean;
     exitDuration?: number;
     getScroller?: () => HTMLElement | undefined; // the current room's, if it is taller than the viewport
@@ -218,6 +220,31 @@ export function useSpriteMovement(
     }
   }
 
+  /** Everything the feet can't walk through: bridge railings, and water along the room's edges. */
+  function solids() {
+    const { innerWidth: vw, innerHeight: vh } = window;
+    const exits = optionsRef.current?.exits ?? [];
+    const water = optionsRef.current?.water ?? [];
+    return [...exits.flatMap((edge) => bridgeRailings(edge, vw, vh)), ...waterRects(water, exits, vw, vh)];
+  }
+
+  /** If the feet would end up in the water at `p`, bring them onto the shore instead. */
+  function ashore(p: { x: number; y: number }) {
+    const water = optionsRef.current?.water ?? [];
+    if (!water.length) return p;
+    const { innerWidth: vw, innerHeight: vh } = window;
+    const wet = waterRects(water, optionsRef.current?.exits ?? [], vw, vh).some(
+      (r) => p.x + feet.x < r.x + r.w && p.x + feet.x + feet.w > r.x && p.y + feet.y < r.y + r.h && p.y + feet.y + feet.h > r.y
+    );
+    if (!wet) return p;
+    // Only the wet edges push back
+    const inset = (edge: Direction) => (water.includes(edge) ? WATER : 0);
+    return {
+      x: Math.min(Math.max(p.x, inset("left") - feet.x), vw - inset("right") - feet.x - feet.w),
+      y: Math.min(Math.max(p.y, inset("up") - feet.y), vh - inset("down") - feet.y - feet.h),
+    };
+  }
+
   function onDeck(edge: Direction) {
     const [a, b] = deckSpan(edge, window.innerWidth, window.innerHeight);
     const start = isVertical(edge) ? body.current.x + feet.x : body.current.y + feet.y;
@@ -330,10 +357,11 @@ export function useSpriteMovement(
 
     const BOUNCE = 22;
     const b = body.current;
-    const to = {
+    // Off the wall — and back onto dry land if he flew out over water
+    const to = ashore({
       x: b.x + (direction === "left" ? BOUNCE : direction === "right" ? -BOUNCE : 0),
       y: b.y + (direction === "up" ? BOUNCE : direction === "down" ? -BOUNCE : 0),
-    };
+    });
     const lift = b.z;
     await tween({ ...to, sx: 1, sy: 1 }, 0.35, "easeOut", (t, ms) => {
       body.current.z = lift * (1 - t) + 14 * Math.sin(Math.PI * t);
@@ -406,14 +434,14 @@ export function useSpriteMovement(
       if (!crossing.current) {
         const { innerWidth: vw, innerHeight: vh } = window;
         const exits = optionsRef.current?.exits ?? [];
-        const railings = exits.flatMap((edge) => bridgeRailings(edge, vw, vh));
+        const walls = solids();
 
         const len = Math.hypot(dx, dy);
         const b = body.current;
         b.x += (dx / len) * travel;
-        collide(railings, dx, 0);
+        collide(walls, dx, 0);
         b.y += (dy / len) * travel;
-        collide(railings, 0, dy);
+        collide(walls, 0, dy);
         followCamera(dt);
 
         const pushed: Direction[] = [];

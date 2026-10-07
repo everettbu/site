@@ -7,6 +7,7 @@ export interface RoomConfig {
   label: string;
   hash: string; // "" for home, "#about" etc.
   neighbors: Partial<Record<Direction, RoomId>>;
+  water?: Direction[]; // edges bordered by water — crossed by the bridges
 }
 
 export const DEFAULT_ROOM: RoomId = "home";
@@ -17,30 +18,35 @@ export const rooms: Record<RoomId, RoomConfig> = {
     label: "Home",
     hash: "",
     neighbors: { up: "about", down: "media", left: "library", right: "projects" },
+    water: ["up", "down", "left", "right"], // an island
   },
   about: {
     id: "about",
     label: "About",
     hash: "#about",
     neighbors: { down: "home", left: "guestbook" },
+    water: ["down"], // across the bridge from home
   },
   library: {
     id: "library",
     label: "Library",
     hash: "#library",
     neighbors: { right: "home", up: "album-shelf", left: "book-shelf", down: "world-map" },
+    water: ["right"], // across the bridge from home
   },
   media: {
     id: "media",
     label: "Media",
     hash: "#media",
     neighbors: { up: "home", left: "collections", right: "montages", down: "photo-reel" },
+    water: ["up"], // across the bridge from home
   },
   projects: {
     id: "projects",
     label: "Projects",
     hash: "#projects",
     neighbors: { left: "home" },
+    water: ["left"], // across the bridge from home
   },
   guestbook: {
     id: "guestbook",
