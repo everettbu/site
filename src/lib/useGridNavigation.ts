@@ -150,10 +150,12 @@ export function useGridNavigation(options?: {
 
       if (absX > WHEEL_THRESHOLD || absY > WHEEL_THRESHOLD) {
         let direction: Direction;
+        // Follow the fingers: with natural scrolling, a trackpad swipe to the
+        // right produces negative deltaX, so negative delta → right / down.
         if (absX > absY) {
-          direction = wheelAccX.current > 0 ? "right" : "left";
+          direction = wheelAccX.current < 0 ? "right" : "left";
         } else {
-          direction = wheelAccY.current > 0 ? "down" : "up";
+          direction = wheelAccY.current < 0 ? "down" : "up";
         }
         wheelAccX.current = 0;
         wheelAccY.current = 0;
@@ -205,10 +207,11 @@ export function useGridNavigation(options?: {
       if (absX < SWIPE_THRESHOLD && absY < SWIPE_THRESHOLD) return;
 
       let direction: Direction;
+      // Follow the finger: swiping right flings the sprite right
       if (absX > absY) {
-        direction = dx < 0 ? "right" : "left";
+        direction = dx > 0 ? "right" : "left";
       } else {
-        direction = dy < 0 ? "down" : "up";
+        direction = dy > 0 ? "down" : "up";
       }
 
       (onSwipe ?? move)(direction);
