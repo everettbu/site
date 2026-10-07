@@ -7,7 +7,7 @@ interface LibraryTileProps {
 
 export default function LibraryTile({ onMove }: LibraryTileProps) {
   return (
-    <div className="h-full w-full flex items-center justify-center bg-rose-100/20 relative">
+    <div className="h-full w-full flex items-center justify-center relative">
       <ReadingNook />
       <button
         onClick={() => onMove("up")}

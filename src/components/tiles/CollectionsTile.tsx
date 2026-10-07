@@ -6,7 +6,7 @@ interface CollectionsTileProps {
 
 export default function CollectionsTile({ onMove }: CollectionsTileProps) {
   return (
-    <div className="h-full w-full flex items-center justify-center bg-sky-100/30 relative">
+    <div className="h-full w-full flex items-center justify-center relative">
       <button
         onClick={() => onMove("up")}
         className="absolute top-12 text-xs font-light tracking-widest uppercase text-neutral-400 hover:text-neutral-900 transition-colors cursor-pointer"
