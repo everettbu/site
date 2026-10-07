@@ -444,18 +444,23 @@ export function useSpriteMovement(
     optionsRef.current?.onSeatChange?.(next);
   }
 
-  /** Space: sit when standing at the chair, then read, then fold the paper. */
-  function sitOrRead() {
-    if (scripted.current || crossing.current) return;
+  /** Whether the feet are in front of the room's chair. */
+  function atChair() {
     const chair = optionsRef.current?.props?.seat?.(window.innerWidth, window.innerHeight);
     const b = body.current;
-    const atChair =
+    return (
       !!chair &&
       b.x + feet.x < chair.zone.x + chair.zone.w &&
       b.x + feet.x + feet.w > chair.zone.x &&
       b.y + feet.y < chair.zone.y + chair.zone.h &&
-      b.y + feet.y + feet.h > chair.zone.y;
-    const next = pressSpace(seat.current, atChair);
+      b.y + feet.y + feet.h > chair.zone.y
+    );
+  }
+
+  /** Space: sit when standing at the chair, then read, then fold the paper. */
+  function sitOrRead() {
+    if (scripted.current || crossing.current) return;
+    const next = pressSpace(seat.current, atChair());
     if (next !== "empty" && seat.current === "empty") held.current = [];
     setSeat(next);
   }
@@ -514,8 +519,15 @@ export function useSpriteMovement(
         b.x += (dx / len) * travel;
         collide(walls, dx, 0);
         b.y += (dy / len) * travel;
+        const wantY = b.y;
         collide(walls, 0, dy);
         followCamera(dt);
+
+        // Walked straight into the chair — sit down
+        if (dy < 0 && b.y > wantY && atChair()) {
+          held.current = [];
+          setSeat("sitting");
+        }
 
         const pushed: Direction[] = [];
         if (b.x < 0) pushed.push("left");
@@ -558,7 +570,10 @@ export function useSpriteMovement(
       if (!direction) return;
 
       e.preventDefault();
-      getUp();
+      if (seat.current !== "empty") {
+        if (e.repeat) return; // still holding the key he walked in with
+        getUp();
+      }
       if (!held.current.includes(direction)) held.current.push(direction);
       start();
     };
