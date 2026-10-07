@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { motion } from "motion/react";
-import { useGridNavigation } from "@/lib/useGridNavigation";
+import { useGridNavigation, TRANSITION_EASE } from "@/lib/useGridNavigation";
 import { Direction, RoomId, DEFAULT_ROOM, rooms } from "@/lib/grid";
+import { BRIDGES } from "@/lib/bridges";
 import Minimap from "./Minimap";
 import MapOverlay from "./MapOverlay";
 import NavigationHint from "./NavigationHint";
 import HomeButton from "./HomeButton";
+import Sprite from "./Sprite";
 import HomeTile from "./tiles/HomeTile";
 import AboutTile from "./tiles/AboutTile";
 import LibraryTile from "./tiles/LibraryTile";
@@ -53,6 +55,26 @@ const OPPOSITE: Record<Direction, Direction> = {
   right: "left",
 };
 
+const BRIDGE_POSITION: Record<Direction, string> = {
+  up: "top-0 left-1/2 -translate-x-1/2",
+  down: "bottom-0 left-1/2 -translate-x-1/2",
+  left: "left-0 top-1/2 -translate-y-1/2",
+  right: "right-0 top-1/2 -translate-y-1/2",
+};
+
+function Bridge({ edge }: { edge: Direction }) {
+  const { src, width, height } = BRIDGES[edge];
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      className={`absolute ${BRIDGE_POSITION[edge]} pointer-events-none`}
+      style={{ imageRendering: "pixelated", width, height }}
+    />
+  );
+}
+
 function RoomView({
   roomId,
   onMove,
@@ -65,19 +87,10 @@ function RoomView({
   return (
     <div className="relative w-[100vw] h-[100dvh]">
       <Component onMove={onMove} />
-      {/* eslint-disable @next/next/no-img-element */}
-      {(roomId === "home" || roomId === "about") && (
-        <img src="/bridges/bridge-south.png" alt="" className="absolute bottom-0 left-1/2 -translate-x-1/2 pointer-events-none" style={{ imageRendering: "pixelated", width: 82, height: 57 }} />
-      )}
-      {(roomId === "home" || roomId === "media") && (
-        <img src="/bridges/bridge-north.png" alt="" className="absolute top-0 left-1/2 -translate-x-1/2 pointer-events-none" style={{ imageRendering: "pixelated", width: 82, height: 57 }} />
-      )}
-      {(roomId === "home" || roomId === "library") && (
-        <img src="/bridges/bridge-east.png" alt="" className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" style={{ imageRendering: "pixelated", width: 59, height: 82 }} />
-      )}
-      {(roomId === "home" || roomId === "projects") && (
-        <img src="/bridges/bridge-west.png" alt="" className="absolute left-0 top-1/2 -translate-y-1/2 pointer-events-none" style={{ imageRendering: "pixelated", width: 57, height: 82 }} />
-      )}
+      {(roomId === "home" || roomId === "about") && <Bridge edge="down" />}
+      {(roomId === "home" || roomId === "media") && <Bridge edge="up" />}
+      {(roomId === "home" || roomId === "library") && <Bridge edge="right" />}
+      {(roomId === "home" || roomId === "projects") && <Bridge edge="left" />}
     </div>
   );
 }
@@ -108,10 +121,14 @@ export default function GridWorld() {
   );
 
   const isHome = currentRoom === DEFAULT_ROOM;
+  const exits = useMemo(
+    () => Object.keys(rooms[currentRoom].neighbors) as Direction[],
+    [currentRoom]
+  );
 
   const transitionConfig = {
     duration,
-    ease: [0.25, 0.1, 0.25, 1.0] as const,
+    ease: TRANSITION_EASE,
   };
 
   return (
@@ -150,6 +167,13 @@ export default function GridWorld() {
       >
         <RoomView roomId={currentRoom} onMove={move} />
       </motion.div>
+
+      <Sprite
+        disabled={isMapOpen}
+        exits={exits}
+        onExit={move}
+        exitDuration={duration}
+      />
 
       <Minimap currentRoom={currentRoom} onToggle={() => setIsMapOpen((v) => !v)} />
       <MapOverlay

@@ -11,7 +11,7 @@ export default function NavigationHint({ visible }: NavigationHintProps) {
         visible ? "opacity-100" : "opacity-0 pointer-events-none"
       }`}
     >
-      Scroll or use arrows to explore
+      Scroll to explore · Arrows to walk
     </div>
   );
 }
