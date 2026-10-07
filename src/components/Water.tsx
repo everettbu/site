@@ -26,12 +26,12 @@ const WAVES = WATER_WAVES.map(
 );
 
 /**
- * Calm pixel water along the room's `edges`: sparse wave crests that sway a
- * single art pixel, two sets out of step. Stepped transform animation only,
- * so it runs on the compositor.
+ * Calm pixel water along the room's `edges` (or filling its box when no edges
+ * are given): sparse wave crests that sway a single art pixel, two sets out of
+ * step. Stepped transform animation only, so it runs on the compositor.
  */
-export default function Water({ edges }: { edges: Direction[] }) {
-  const mask = bandMask(edges);
+export default function Water({ edges }: { edges?: Direction[] }) {
+  const mask = edges ? bandMask(edges) : undefined;
   return (
     <div
       className="absolute inset-0 overflow-hidden pointer-events-none"

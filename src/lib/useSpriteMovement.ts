@@ -8,6 +8,7 @@ import { TRANSITION_EASE } from "./useGridNavigation";
 
 const SPEED = 260; // walking, px per second
 const STRIDE = 14; // px travelled per walk frame
+const BRIDGE_ACCEL = SPEED / 0.2; // px/s² — on a long bridge he eases in and out, so the fast-moving world does too
 const FLY_SPEED = 900; // px per second
 const FLY_HEIGHT = 18; // px off the ground in flight
 const FLAIL_MS = 110; // tumble / stars frame time
@@ -26,6 +27,14 @@ const KEY_DIRECTIONS: Record<string, Direction> = {
   a: "left",
   d: "right",
 };
+
+/** How the sprite tells the world it's crossing a long bridge (see GridWorld). */
+export interface SpriteBridge {
+  gap: (direction: Direction) => number; // open water to the neighbour that way, 0 if none
+  start: (direction: Direction) => void; // he's stepped onto a long bridge
+  camera: (offset: number) => void; // pan the world by this much along the bridge
+  end: (arrived: boolean) => void; // he's stepped off — into the next room, or back
+}
 
 export type SpriteAction = "idle" | "walk" | "fly" | "tumble" | "dazed";
 
@@ -55,7 +64,9 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
  * the room's `exits`. Bridge railings — and, around an island room, the
  * water — collide with the sprite's feet.
  * Leaving calls `onExit`; if that starts a room transition, the sprite glides
- * to the opposite edge in step with the room slide.
+ * to the opposite edge in step with the room slide. Across water the rooms are
+ * further apart: he walks (or flies) a long bridge while the camera follows,
+ * reported through `bridge` so the world can be panned in step.
  *
  * Transforms are written straight to the DOM; React only re-renders when the
  * pose changes. The walking rAF loop stops when idle.
@@ -69,6 +80,7 @@ export function useSpriteMovement(
     onExit?: (direction: Direction) => boolean;
     exitDuration?: number;
     getScroller?: () => HTMLElement | undefined; // the current room's, if it is taller than the viewport
+    bridge?: SpriteBridge;
   }
 ) {
   const disabled = options?.disabled ?? false;
@@ -87,6 +99,10 @@ export function useSpriteMovement(
   const distance = useRef(0);
   const crossing = useRef(false); // walking glide into the next room
   const scripted = useRef(false); // a launch owns the sprite
+  // On one now — with the viewport it was measured against, so a resize can be remapped
+  const longBridge = useRef<{ direction: Direction; gap: number; vw: number; vh: number } | null>(null);
+  const camera = useRef({ x: 0, y: 0 }); // world → screen offset while on a long bridge
+  const velocity = useRef({ x: 0, y: 0 }); // px/s — instant on land, eased on a long bridge
   const launchLockedUntil = useRef(0);
 
   // Latest room/callbacks without re-subscribing listeners
@@ -112,7 +128,9 @@ export function useSpriteMovement(
     const b = body.current;
     // Whole pixels keep the pixel art crisp
     if (rootRef.current) {
-      rootRef.current.style.transform = `translate3d(${Math.round(b.x)}px, ${Math.round(b.y)}px, 0)`;
+      const x = Math.round(b.x - camera.current.x);
+      const y = Math.round(b.y - camera.current.y);
+      rootRef.current.style.transform = `translate3d(${x}px, ${y}px, 0)`;
     }
     if (bodyRef.current) {
       bodyRef.current.style.transform = `translate3d(0, ${-Math.round(b.z)}px, 0) scale(${b.sx}, ${b.sy})`;
@@ -170,6 +188,104 @@ export function useSpriteMovement(
       up: { y: vh - height },
     }[direction];
     return tween(to, optionsRef.current?.exitDuration ?? 0, TRANSITION_EASE);
+  }
+
+  // --- Long bridges ------------------------------------------------------------
+
+  /** Measurements for crossing a long bridge in `direction`, along its axis. */
+  function bridgeGeometry(direction: Direction, gap: number, vw = window.innerWidth, vh = window.innerHeight) {
+    const vertical = isVertical(direction);
+    const view = vertical ? vh : vw;
+    const size = vertical ? height : width;
+    const sign = direction === "right" || direction === "down" ? 1 : -1;
+    return {
+      axis: vertical ? ("y" as const) : ("x" as const),
+      sign,
+      start: sign > 0 ? view - size : 0, // where he steps off this room
+      length: gap + size, // how far he travels to step into the next one
+      sweep: view + gap, // how far the camera travels meanwhile
+    };
+  }
+
+  /**
+   * Camera travel at progress t ∈ [0, 1] across the bridge. It moves at his
+   * speed at both ends — picking him up and setting him down without a jolt —
+   * and sweeps faster in between to bring the next room in.
+   */
+  function bridgeCamera(t: number, length: number, sweep: number) {
+    const k = length / sweep;
+    return ((2 * k - 2) * t ** 3 + (3 - 3 * k) * t ** 2 + k * t) * sweep;
+  }
+
+  function startBridge(direction: Direction, gap: number) {
+    longBridge.current = { direction, gap, vw: window.innerWidth, vh: window.innerHeight };
+    optionsRef.current?.bridge?.start(direction);
+  }
+
+  /** Pan with him as he walks; hand over to the next room when he arrives, or back if he turns round. */
+  function updateBridge() {
+    if (!longBridge.current) return;
+    const { direction, gap } = longBridge.current;
+    const g = bridgeGeometry(direction, gap);
+    const b = body.current;
+    const t = (g.sign * (b[g.axis] - g.start)) / g.length;
+    if (t <= 0) {
+      b[g.axis] = g.start;
+      endBridge(false);
+    } else if (t >= 1) {
+      b[g.axis] -= g.sign * g.sweep; // into the next room's coordinates
+      endBridge(true);
+    } else {
+      // Whole pixels: a fractional pan blurs the seams between rooms into light lines
+      camera.current[g.axis] = Math.round(g.sign * bridgeCamera(Math.max(t, 0), g.length, g.sweep));
+      optionsRef.current?.bridge?.camera(camera.current[g.axis]);
+    }
+  }
+
+  /** The window changed size mid-crossing: keep him the same fraction of the way across, still on the deck. */
+  function remapBridge() {
+    const lb = longBridge.current!;
+    const before = bridgeGeometry(lb.direction, lb.gap, lb.vw, lb.vh);
+    const now = bridgeGeometry(lb.direction, lb.gap);
+    const b = body.current;
+    const t = Math.min(Math.max((before.sign * (b[before.axis] - before.start)) / before.length, 0), 1);
+    b[now.axis] = now.start + now.sign * t * now.length;
+    // The deck stays centred on the screen — keep his offset from it
+    const across = now.axis === "x" ? "y" : "x";
+    b[across] += across === "x" ? (window.innerWidth - lb.vw) / 2 : (window.innerHeight - lb.vh) / 2;
+    lb.vw = window.innerWidth;
+    lb.vh = window.innerHeight;
+    camera.current[now.axis] = Math.round(now.sign * bridgeCamera(t, now.length, now.sweep));
+    optionsRef.current?.bridge?.camera(camera.current[now.axis]);
+    apply();
+  }
+
+  function endBridge(arrived: boolean) {
+    longBridge.current = null;
+    camera.current = { x: 0, y: 0 };
+    optionsRef.current?.bridge?.end(arrived);
+  }
+
+  /**
+   * Coming to rest a hair past the edge leaves him "on the bridge" while looking
+   * like he's in the room — step him back so the state matches what you see.
+   */
+  function settleOffBridgeEdge() {
+    if (!longBridge.current) return;
+    const g = bridgeGeometry(longBridge.current.direction, longBridge.current.gap);
+    const b = body.current;
+    if (g.sign * (b[g.axis] - g.start) > 4) return;
+    b[g.axis] = g.start;
+    endBridge(false);
+    apply();
+  }
+
+  /** Keep the feet on the deck, between the railings, all the way across. */
+  function stayOnDeck(direction: Direction) {
+    const [a, c] = deckSpan(direction, window.innerWidth, window.innerHeight);
+    const b = body.current;
+    if (isVertical(direction)) b.x = Math.min(Math.max(b.x, a - feet.x), c - feet.x - feet.w);
+    else b.y = Math.min(Math.max(b.y, a - feet.y), c - feet.y - feet.h);
   }
 
   // --- Camera (tall rooms) ----------------------------------------------------
@@ -293,13 +409,14 @@ export function useSpriteMovement(
   // --- Launch ---------------------------------------------------------------
 
   async function launch(direction: Direction) {
-    if (disabled || scripted.current || crossing.current) return;
+    if (disabled || scripted.current || crossing.current || longBridge.current) return;
     if (Date.now() < launchLockedUntil.current) return;
     scripted.current = true;
 
     const vertical = isVertical(direction);
     const { stop, from, through } = flightPath(direction);
     const flightTime = Math.max(Math.abs(stop - from) / FLY_SPEED, 0.12);
+    const gap = through ? optionsRef.current?.bridge?.gap(direction) ?? 0 : 0;
 
     if (vertical) {
       // Crouch, spring up, fly
@@ -307,8 +424,8 @@ export function useSpriteMovement(
       await tween({ sx: 1.15, sy: 0.8 }, 0.1, "easeOut");
       updatePose({ facing: direction, action: "fly", step: 0 });
       await tween({ sx: 0.9, sy: 1.15, z: FLY_HEIGHT * 0.6 }, 0.08, "easeOut");
-      await tween({ y: stop, z: FLY_HEIGHT, sx: 1, sy: 1 }, flightTime, [0.4, 0, 1, 1]);
-    } else {
+      if (!gap) await tween({ y: stop, z: FLY_HEIGHT, sx: 1, sy: 1 }, flightTime, [0.4, 0, 1, 1]);
+    } else if (!gap) {
       // Knocked off his feet — flies sideways, flailing
       await tween({ x: stop }, flightTime, "linear", (t, ms) => {
         body.current.z = FLY_HEIGHT * 0.6 * Math.min(t * 5, 1);
@@ -316,7 +433,10 @@ export function useSpriteMovement(
       });
     }
 
-    if (through && optionsRef.current?.onExit?.(direction)) {
+    if (gap) {
+      await flyAcross(direction, gap);
+      await touchDown(direction);
+    } else if (through && optionsRef.current?.onExit?.(direction)) {
       await carryOn(direction);
     } else {
       await crash(direction);
@@ -327,7 +447,36 @@ export function useSpriteMovement(
     updatePose({ facing: poseRef.current.facing, action: "idle", step: 0 });
   }
 
-  /** Through the bridge, then on to land in the middle of the new room. */
+  /**
+   * Over a long bridge: one continuous flight from take-off to the middle of
+   * the next room. He and the camera ease on the same curve, so he glides
+   * straight to the middle of the screen while the bridge and water pass
+   * beneath — no hand-offs, no changes of pace.
+   */
+  async function flyAcross(direction: Direction, gap: number) {
+    startBridge(direction, gap);
+    const g = bridgeGeometry(direction, gap);
+    const b = body.current;
+    const centre = { x: (window.innerWidth - width) / 2, y: (window.innerHeight - height) / 2 };
+    const landing = { ...centre, [g.axis]: centre[g.axis] + g.sign * g.sweep }; // in this room's coordinates
+    const distance = Math.hypot(landing.x - b.x, landing.y - b.y);
+    const lift = b.z;
+    const cruise = isVertical(direction) ? FLY_HEIGHT : FLY_HEIGHT * 0.6;
+
+    await tween(landing, Math.min(Math.max(distance / FLY_SPEED, 0.9), 1.6), "easeInOut", (t, ms) => {
+      camera.current[g.axis] = Math.round(g.sign * g.sweep * t); // t is already eased
+      optionsRef.current?.bridge?.camera(camera.current[g.axis]);
+      // Up to cruising height, then drift down for the landing
+      body.current.z = t < 0.15 ? lerp(lift, cruise, t / 0.15) : t > 0.7 ? cruise * (1 - ((t - 0.7) / 0.3) ** 2) : cruise;
+      if (!isVertical(direction)) updatePose({ facing: direction, action: "tumble", step: Math.floor(ms / FLAIL_MS) });
+    });
+
+    b[g.axis] -= g.sign * g.sweep; // into the next room's coordinates
+    endBridge(true);
+    apply();
+  }
+
+  /** Through a short bridge, then on to land in the middle of the new room. */
   async function carryOn(direction: Direction) {
     await glideAcross(direction);
 
@@ -341,8 +490,10 @@ export function useSpriteMovement(
       body.current.z = lift * (1 - t * t); // drift down, touching down at the end
       if (action === "tumble") updatePose({ facing, action, step: Math.floor(ms / FLAIL_MS) });
     });
+    await touchDown(direction);
+  }
 
-    // Touch down
+  async function touchDown(direction: Direction) {
     updatePose({ facing: direction, action: "idle", step: 0 });
     await tween({ z: 0, sx: 1.2, sy: 0.78 }, 0.07, "easeOut");
     await tween({ sx: 1, sy: 1 }, 0.22, "backOut");
@@ -379,7 +530,7 @@ export function useSpriteMovement(
 
   /** Back to the middle of the room, in step with the home crossfade. */
   async function recentre() {
-    if (scripted.current || crossing.current) return;
+    if (scripted.current || crossing.current || longBridge.current) return;
     scripted.current = true;
     updatePose({ facing: "down", action: "idle", step: 0 });
     await tween(
@@ -419,30 +570,55 @@ export function useSpriteMovement(
       const keys = held.current;
       const dx = (keys.includes("right") ? 1 : 0) - (keys.includes("left") ? 1 : 0);
       const dy = (keys.includes("down") ? 1 : 0) - (keys.includes("up") ? 1 : 0);
-      const facing = keys[keys.length - 1];
+      const len = Math.hypot(dx, dy);
 
-      if (!facing || (dx === 0 && dy === 0)) {
+      // Where he wants to go; on a long bridge he eases towards it instead of snapping
+      const want = len ? { x: (dx / len) * SPEED, y: (dy / len) * SPEED } : { x: 0, y: 0 };
+      const v = velocity.current;
+      if (longBridge.current) {
+        const ex = want.x - v.x;
+        const ey = want.y - v.y;
+        const gap = Math.hypot(ex, ey);
+        const step = Math.min(1, (BRIDGE_ACCEL * dt) / (gap || 1));
+        v.x += ex * step;
+        v.y += ey * step;
+      } else {
+        v.x = want.x;
+        v.y = want.y;
+      }
+
+      const speed = Math.hypot(v.x, v.y);
+      if (speed < 1 && !len) {
+        settleOffBridgeEdge();
         frameId.current = null;
         last = 0;
         distance.current = 0;
-        updatePose({ facing: facing ?? poseRef.current.facing, action: "idle", step: 0 });
+        velocity.current = { x: 0, y: 0 };
+        updatePose({ facing: keys[keys.length - 1] ?? poseRef.current.facing, action: "idle", step: 0 });
         return;
       }
+      const facing = keys[keys.length - 1] ?? poseRef.current.facing;
+      const travel = speed * dt;
 
-      const travel = SPEED * dt;
-
-      if (!crossing.current) {
+      if (longBridge.current) {
+        const b = body.current;
+        b.x += v.x * dt;
+        b.y += v.y * dt;
+        stayOnDeck(longBridge.current.direction);
+        updateBridge();
+        apply();
+      } else if (!crossing.current) {
         const { innerWidth: vw, innerHeight: vh } = window;
         const exits = optionsRef.current?.exits ?? [];
         const walls = solids();
 
-        const len = Math.hypot(dx, dy);
         const b = body.current;
-        b.x += (dx / len) * travel;
+        b.x += v.x * dt;
         collide(walls, dx, 0);
-        b.y += (dy / len) * travel;
+        b.y += v.y * dt;
         collide(walls, 0, dy);
         followCamera(dt);
+        const beyond = { x: b.x, y: b.y }; // before the walls clamp him
 
         const pushed: Direction[] = [];
         if (b.x < 0) pushed.push("left");
@@ -451,7 +627,17 @@ export function useSpriteMovement(
         else if (b.y > vh - height) pushed.push("down");
 
         clamp();
-        const left = pushed.some((edge) => exits.includes(edge) && onDeck(edge) && cross(edge));
+        // Off the edge across a bridge: a long one he walks, a short one hands straight over
+        const exit = pushed.find((edge) => exits.includes(edge) && onDeck(edge));
+        const gap = exit ? optionsRef.current?.bridge?.gap(exit) ?? 0 : 0;
+        if (exit && gap) {
+          // Onto the bridge proper — keep the step past the edge, so he's only on it once he's really past
+          const axis = isVertical(exit) ? "y" : "x";
+          b[axis] = beyond[axis];
+          startBridge(exit, gap);
+          updateBridge();
+        }
+        const left = exit && !gap ? cross(exit) : false;
         if (!left) apply();
       }
 
@@ -491,6 +677,10 @@ export function useSpriteMovement(
     };
 
     const handleResize = () => {
+      if (longBridge.current) {
+        if (!scripted.current) remapBridge(); // a flight across finishes on its own
+        return;
+      }
       clamp();
       apply();
     };

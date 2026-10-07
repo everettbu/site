@@ -1,4 +1,4 @@
-import { Direction } from "./grid";
+import { Direction, RoomId, rooms } from "./grid";
 import { PIXEL_SCALE } from "./pixelArt";
 
 export interface Rect {
@@ -70,3 +70,25 @@ export function waterRects(edges: Direction[], exits: Direction[], vw: number, v
     return [band(0, a), band(b, length)];
   });
 }
+
+// --- Long bridges -------------------------------------------------------------
+
+/** Open water between two rooms whose facing edges are both wet — crossed by a long bridge. */
+export const BRIDGE_GAP = 5 * WATER;
+
+const OPPOSITE: Record<Direction, Direction> = { up: "down", down: "up", left: "right", right: "left" };
+
+/** How far apart a room and its neighbour in `direction` are: BRIDGE_GAP across water, else 0. */
+export function crossingGap(roomId: RoomId, direction: Direction) {
+  const room = rooms[roomId];
+  const next = room?.neighbors[direction];
+  if (!next) return 0;
+  const wet = room.water?.includes(direction) && rooms[next].water?.includes(OPPOSITE[direction]);
+  return wet ? BRIDGE_GAP : 0;
+}
+
+/** Tileable middle of the bridge art (one board panel, seam to seam) for the span over the gap. */
+export const BRIDGE_SPAN = {
+  vertical: { src: "/bridges/bridge-span-ns.png", width: 82, height: 30 },
+  horizontal: { src: "/bridges/bridge-span-ew.png", width: 30, height: 82 },
+};

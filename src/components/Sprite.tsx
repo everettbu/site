@@ -2,7 +2,7 @@
 
 import { Ref, useImperativeHandle } from "react";
 import { Direction } from "@/lib/grid";
-import { useSpriteMovement } from "@/lib/useSpriteMovement";
+import { useSpriteMovement, SpriteBridge } from "@/lib/useSpriteMovement";
 import { PIXEL_SCALE } from "@/lib/pixelArt";
 import {
   SPRITE_COLS,
@@ -43,6 +43,7 @@ interface SpriteProps {
   onExit?: (d: Direction) => boolean;
   exitDuration?: number;
   getScroller?: () => HTMLElement | undefined;
+  bridge?: SpriteBridge;
 }
 
 export default function Sprite({
@@ -53,6 +54,7 @@ export default function Sprite({
   onExit,
   exitDuration,
   getScroller,
+  bridge,
 }: SpriteProps) {
   const { rootRef, bodyRef, shadowRef, pose, ready, launch, recentre } = useSpriteMovement(BOX, {
     disabled,
@@ -61,6 +63,7 @@ export default function Sprite({
     onExit,
     exitDuration,
     getScroller,
+    bridge,
   });
 
   useImperativeHandle(ref, () => ({ launch, recentre }));
