@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import { motion } from "motion/react";
 import { useGridNavigation, TRANSITION_EASE } from "@/lib/useGridNavigation";
 import { Direction, RoomId, DEFAULT_ROOM, rooms } from "@/lib/grid";
@@ -9,7 +9,7 @@ import Minimap from "./Minimap";
 import MapOverlay from "./MapOverlay";
 import NavigationHint from "./NavigationHint";
 import HomeButton from "./HomeButton";
-import Sprite from "./Sprite";
+import Sprite, { SpriteHandle } from "./Sprite";
 import HomeTile from "./tiles/HomeTile";
 import AboutTile from "./tiles/AboutTile";
 import LibraryTile from "./tiles/LibraryTile";
@@ -97,6 +97,8 @@ function RoomView({
 
 export default function GridWorld() {
   const [isMapOpen, setIsMapOpen] = useState(false);
+  const spriteRef = useRef<SpriteHandle>(null);
+  const launchSprite = useCallback((d: Direction) => spriteRef.current?.launch(d), []);
 
   const {
     currentRoom,
@@ -110,7 +112,7 @@ export default function GridWorld() {
     moveTo,
     moveToHome,
     onAnimationComplete,
-  } = useGridNavigation({ disabled: isMapOpen });
+  } = useGridNavigation({ disabled: isMapOpen, onSwipe: launchSprite });
 
   const handleMapNavigate = useCallback(
     (roomId: RoomId) => {
@@ -169,6 +171,7 @@ export default function GridWorld() {
       </motion.div>
 
       <Sprite
+        ref={spriteRef}
         disabled={isMapOpen}
         exits={exits}
         onExit={move}

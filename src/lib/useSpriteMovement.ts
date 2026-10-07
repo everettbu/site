@@ -1,13 +1,18 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useRef, RefObject } from "react";
-import { animate } from "motion/react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { animate, useReducedMotion, Easing } from "motion/react";
 import { Direction } from "./grid";
 import { Rect, deckSpan, bridgeRailings } from "./bridges";
 import { TRANSITION_EASE } from "./useGridNavigation";
 
-const SPEED = 200; // px per second
+const SPEED = 200; // walking, px per second
 const STRIDE = 14; // px travelled per walk frame
+const FLY_SPEED = 900; // px per second
+const FLY_HEIGHT = 18; // px off the ground in flight
+const FLAIL_MS = 110; // tumble / stars frame time
+const DAZED_MS = 350;
+const LAUNCH_COOLDOWN = 400; // ms — swallows trackpad inertia after a landing
 
 const KEY_DIRECTIONS: Record<string, Direction> = {
   ArrowUp: "up",
@@ -20,23 +25,39 @@ const KEY_DIRECTIONS: Record<string, Direction> = {
   d: "right",
 };
 
+export type SpriteAction = "idle" | "walk" | "fly" | "tumble" | "dazed";
+
 export interface SpritePose {
   facing: Direction;
-  moving: boolean;
-  step: number; // index into the walk cycle
+  action: SpriteAction;
+  step: number; // index into the action's frame cycle
 }
 
+// Everything the sprite's transforms are derived from
+interface Body {
+  x: number;
+  y: number;
+  z: number; // height off the ground
+  sx: number; // squash & stretch
+  sy: number;
+}
+
+const isVertical = (d: Direction) => d === "up" || d === "down";
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
 /**
- * Moves the element behind `ref` with arrow keys / WASD.
+ * Drives the sprite: walking with arrow keys / WASD, and `launch` (from a
+ * swipe) — a superhero flight up/down, or a knock-back left/right.
+ *
  * Screen edges are walls; the only way out is across a bridge deck on one of
- * the room's `exits`. Bridge railings collide with the sprite's feet. Crossing
- * calls `onExit`; if that starts a room transition, the sprite glides to the
- * opposite edge in step with the room slide.
- * Position is written straight to the DOM each frame; React only re-renders
- * when the pose (facing / walk frame) changes. The rAF loop stops when idle.
+ * the room's `exits`. Bridge railings collide with the sprite's feet.
+ * Leaving calls `onExit`; if that starts a room transition, the sprite glides
+ * to the opposite edge in step with the room slide.
+ *
+ * Transforms are written straight to the DOM; React only re-renders when the
+ * pose changes. The walking rAF loop stops when idle.
  */
 export function useSpriteMovement(
-  ref: RefObject<HTMLElement | null>,
   box: { width: number; height: number; feet: Rect }, // feet: hitbox, relative to the sprite
   options?: {
     disabled?: boolean;
@@ -46,106 +67,269 @@ export function useSpriteMovement(
   }
 ) {
   const disabled = options?.disabled ?? false;
-  const [pose, setPose] = useState<SpritePose>({ facing: "down", moving: false, step: 0 });
+  const reducedMotion = useReducedMotion();
+  const [pose, setPose] = useState<SpritePose>({ facing: "down", action: "idle", step: 0 });
   const [ready, setReady] = useState(false);
 
-  const pos = useRef({ x: 0, y: 0 });
+  const rootRef = useRef<HTMLDivElement>(null); // position
+  const bodyRef = useRef<HTMLDivElement>(null); // height + squash
+  const shadowRef = useRef<HTMLDivElement>(null);
+
+  const body = useRef<Body>({ x: 0, y: 0, z: 0, sx: 1, sy: 1 });
   const held = useRef<Direction[]>([]); // most recently pressed last
   const poseRef = useRef(pose);
   const frameId = useRef<number | null>(null);
   const distance = useRef(0);
-  const crossing = useRef(false); // gliding into the next room
+  const crossing = useRef(false); // walking glide into the next room
+  const scripted = useRef(false); // a launch owns the sprite
+  const launchLockedUntil = useRef(0);
 
   // Latest room/callbacks without re-subscribing listeners
   const optionsRef = useRef(options);
+  const reducedRef = useRef(reducedMotion);
   useEffect(() => {
     optionsRef.current = options;
+    reducedRef.current = reducedMotion;
   });
 
   const { width, height, feet } = box;
 
   // Place below the centre of the viewport on mount
   useLayoutEffect(() => {
-    pos.current = {
-      x: Math.round((window.innerWidth - width) / 2),
-      y: Math.round(window.innerHeight / 2 + 48),
-    };
+    body.current.x = Math.round((window.innerWidth - width) / 2);
+    body.current.y = Math.round(window.innerHeight / 2 + 48);
     apply();
     setReady(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function apply() {
-    const el = ref.current;
-    if (!el) return;
+    const b = body.current;
     // Whole pixels keep the pixel art crisp
-    el.style.transform = `translate3d(${Math.round(pos.current.x)}px, ${Math.round(pos.current.y)}px, 0)`;
+    if (rootRef.current) {
+      rootRef.current.style.transform = `translate3d(${Math.round(b.x)}px, ${Math.round(b.y)}px, 0)`;
+    }
+    if (bodyRef.current) {
+      bodyRef.current.style.transform = `translate3d(0, ${-Math.round(b.z)}px, 0) scale(${b.sx}, ${b.sy})`;
+    }
+    if (shadowRef.current) {
+      const lift = b.z / FLY_HEIGHT;
+      shadowRef.current.style.transform = `scale(${1 - lift * 0.35})`;
+      shadowRef.current.style.opacity = `${1 - lift * 0.5}`;
+    }
   }
 
   function clamp() {
-    const p = pos.current;
-    p.x = Math.min(Math.max(p.x, 0), window.innerWidth - width);
-    p.y = Math.min(Math.max(p.y, 0), window.innerHeight - height);
+    const b = body.current;
+    b.x = Math.min(Math.max(b.x, 0), window.innerWidth - width);
+    b.y = Math.min(Math.max(b.y, 0), window.innerHeight - height);
   }
 
   function updatePose(next: SpritePose) {
     const prev = poseRef.current;
-    if (prev.facing === next.facing && prev.moving === next.moving && prev.step === next.step) return;
+    if (prev.facing === next.facing && prev.action === next.action && prev.step === next.step) return;
     poseRef.current = next;
     setPose(next);
   }
 
+  // --- Tweens ---------------------------------------------------------------
+
+  /** Tween body properties to `to`. `onFrame` runs after interpolation, so it may override any of them. */
+  function tween(
+    to: Partial<Body>,
+    duration: number,
+    ease: Easing | readonly number[],
+    onFrame?: (t: number, elapsedMs: number) => void
+  ) {
+    const from = { ...body.current };
+    const keys = Object.keys(to) as (keyof Body)[];
+    const seconds = reducedRef.current ? 0 : duration;
+    return animate(0, 1, {
+      duration: seconds,
+      ease: ease as Easing,
+      onUpdate: (t) => {
+        for (const k of keys) body.current[k] = lerp(from[k], to[k]!, t);
+        onFrame?.(t, t * seconds * 1000);
+        apply();
+      },
+    });
+  }
+
+  /** Slide to the opposite edge in step with the room transition. */
+  function glideAcross(direction: Direction) {
+    const { innerWidth: vw, innerHeight: vh } = window;
+    const to = {
+      right: { x: 0 },
+      left: { x: vw - width },
+      down: { y: 0 },
+      up: { y: vh - height },
+    }[direction];
+    return tween(to, optionsRef.current?.exitDuration ?? 0, TRANSITION_EASE);
+  }
+
+  // --- Collision ------------------------------------------------------------
+
   // Push the feet back out of any rect they ran into along the axis of travel
   function collide(rects: Rect[], dx: number, dy: number) {
-    const p = pos.current;
+    const b = body.current;
     for (const r of rects) {
-      const fx = p.x + feet.x;
-      const fy = p.y + feet.y;
+      const fx = b.x + feet.x;
+      const fy = b.y + feet.y;
       if (fx >= r.x + r.w || fx + feet.w <= r.x || fy >= r.y + r.h || fy + feet.h <= r.y) continue;
-      if (dx > 0) p.x = r.x - feet.x - feet.w;
-      else if (dx < 0) p.x = r.x + r.w - feet.x;
-      else if (dy > 0) p.y = r.y - feet.y - feet.h;
-      else if (dy < 0) p.y = r.y + r.h - feet.y;
+      if (dx > 0) b.x = r.x - feet.x - feet.w;
+      else if (dx < 0) b.x = r.x + r.w - feet.x;
+      else if (dy > 0) b.y = r.y - feet.y - feet.h;
+      else if (dy < 0) b.y = r.y + r.h - feet.y;
     }
   }
 
   function onDeck(edge: Direction) {
     const [a, b] = deckSpan(edge, window.innerWidth, window.innerHeight);
-    const vertical = edge === "up" || edge === "down";
-    const start = vertical ? pos.current.x + feet.x : pos.current.y + feet.y;
-    return start >= a && start + (vertical ? feet.w : feet.h) <= b;
+    const start = isVertical(edge) ? body.current.x + feet.x : body.current.y + feet.y;
+    return start >= a && start + (isVertical(edge) ? feet.w : feet.h) <= b;
   }
 
-  // Hand the sprite over to the next room, matching the room slide
-  function cross(direction: Direction) {
-    const opts = optionsRef.current;
-    if (!opts?.onExit?.(direction)) return false;
+  /** Where a flight in `direction` ends: through a bridge, or against a wall / railing. */
+  function flightPath(direction: Direction) {
+    const { innerWidth: vw, innerHeight: vh } = window;
+    const exits = optionsRef.current?.exits ?? [];
+    const through = exits.includes(direction) && onDeck(direction);
 
-    const from = { ...pos.current };
-    const to = {
-      x: direction === "right" ? 0 : direction === "left" ? window.innerWidth - width : from.x,
-      y: direction === "down" ? 0 : direction === "up" ? window.innerHeight - height : from.y,
+    const b = body.current;
+    // Vertical flights are airborne, so the drawn sprite meets the wall FLY_HEIGHT later
+    let stop = { up: FLY_HEIGHT, down: vh - height + FLY_HEIGHT, left: 0, right: vw - width }[direction];
+
+    if (!through && exits.includes(direction)) {
+      const fx = b.x + feet.x;
+      const fy = b.y + feet.y;
+      for (const r of bridgeRailings(direction, vw, vh)) {
+        const inLine = isVertical(direction)
+          ? fx < r.x + r.w && fx + feet.w > r.x
+          : fy < r.y + r.h && fy + feet.h > r.y;
+        if (!inLine) continue;
+        if (direction === "up") stop = Math.max(stop, r.y + r.h - feet.y);
+        if (direction === "down") stop = Math.min(stop, r.y - feet.y - feet.h);
+        if (direction === "left") stop = Math.max(stop, r.x + r.w - feet.x);
+        if (direction === "right") stop = Math.min(stop, r.x - feet.x - feet.w);
+      }
+    }
+
+    // Never fly backwards when already against the wall
+    const current = isVertical(direction) ? b.y : b.x;
+    stop = direction === "up" || direction === "left" ? Math.min(stop, current) : Math.max(stop, current);
+    return { stop, through };
+  }
+
+  // --- Launch ---------------------------------------------------------------
+
+  async function launch(direction: Direction) {
+    if (disabled || scripted.current || crossing.current) return;
+    if (Date.now() < launchLockedUntil.current) return;
+    scripted.current = true;
+
+    const vertical = isVertical(direction);
+    const axis = vertical ? "y" : "x";
+    const { stop, through } = flightPath(direction);
+    const flightTime = Math.max(Math.abs(stop - body.current[axis]) / FLY_SPEED, 0.12);
+
+    if (vertical) {
+      // Crouch, spring up, fly
+      updatePose({ facing: direction, action: "idle", step: 0 });
+      await tween({ sx: 1.15, sy: 0.8 }, 0.1, "easeOut");
+      updatePose({ facing: direction, action: "fly", step: 0 });
+      await tween({ sx: 0.9, sy: 1.15, z: FLY_HEIGHT * 0.6 }, 0.08, "easeOut");
+      await tween({ [axis]: stop, z: FLY_HEIGHT, sx: 1, sy: 1 }, flightTime, [0.4, 0, 1, 1]);
+    } else {
+      // Knocked off his feet — flies sideways, flailing
+      await tween({ [axis]: stop }, flightTime, "linear", (t, ms) => {
+        body.current.z = FLY_HEIGHT * 0.6 * Math.min(t * 5, 1);
+        updatePose({ facing: direction, action: "tumble", step: Math.floor(ms / FLAIL_MS) });
+      });
+    }
+
+    if (through && optionsRef.current?.onExit?.(direction)) {
+      await carryOn(direction);
+    } else {
+      await crash(direction);
+    }
+
+    scripted.current = false;
+    launchLockedUntil.current = Date.now() + LAUNCH_COOLDOWN;
+    updatePose({ facing: poseRef.current.facing, action: "idle", step: 0 });
+  }
+
+  /** Through the bridge, then on to land in the middle of the new room. */
+  async function carryOn(direction: Direction) {
+    await glideAcross(direction);
+
+    const centre = {
+      x: (window.innerWidth - width) / 2,
+      y: (window.innerHeight - height) / 2,
     };
+    const { action, facing } = poseRef.current;
+    const lift = body.current.z;
+    await tween(centre, 0.6, "easeOut", (t, ms) => {
+      body.current.z = lift * (1 - t * t); // drift down, touching down at the end
+      if (action === "tumble") updatePose({ facing, action, step: Math.floor(ms / FLAIL_MS) });
+    });
 
+    // Touch down
+    updatePose({ facing: direction, action: "idle", step: 0 });
+    await tween({ z: 0, sx: 1.2, sy: 0.78 }, 0.07, "easeOut");
+    await tween({ sx: 1, sy: 1 }, 0.22, "backOut");
+  }
+
+  /** Splat, bounce off, thud, see stars. */
+  async function crash(direction: Direction) {
+    // Flatten against the wall, not towards the sprite's centre
+    const el = bodyRef.current;
+    if (el) el.style.transformOrigin = { up: "top", down: "bottom", left: "left bottom", right: "right bottom" }[direction];
+    await tween(isVertical(direction) ? { sx: 1.25, sy: 0.7 } : { sx: 0.65, sy: 1.15 }, 0.06, "easeOut");
+
+    const BOUNCE = 22;
+    const b = body.current;
+    const to = {
+      x: b.x + (direction === "left" ? BOUNCE : direction === "right" ? -BOUNCE : 0),
+      y: b.y + (direction === "up" ? BOUNCE : direction === "down" ? -BOUNCE : 0),
+    };
+    const lift = b.z;
+    await tween({ ...to, sx: 1, sy: 1 }, 0.35, "easeOut", (t, ms) => {
+      body.current.z = lift * (1 - t) + 14 * Math.sin(Math.PI * t);
+      updatePose({ facing: "down", action: "dazed", step: Math.floor(ms / FLAIL_MS) });
+    });
+    if (el) el.style.transformOrigin = ""; // back to the class default (bottom) now the scale is 1
+
+    // Thud, then stars
+    await tween({ z: 0, sx: 1.15, sy: 0.85 }, 0.06, "easeOut");
+    await tween({ sx: 1, sy: 1 }, 0.15, "easeOut");
+    await tween({}, DAZED_MS / 1000, "linear", (_, ms) => {
+      updatePose({ facing: "down", action: "dazed", step: Math.floor(ms / (FLAIL_MS * 1.5)) });
+    });
+  }
+
+  // Walking into a bridge: hand over to the next room
+  function cross(direction: Direction) {
+    if (!optionsRef.current?.onExit?.(direction)) return false;
     crossing.current = true;
-    animate(0, 1, {
-      duration: opts.exitDuration ?? 0,
-      ease: TRANSITION_EASE,
-      onUpdate: (t) => {
-        pos.current = { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
-        apply();
-      },
-      onComplete: () => {
-        crossing.current = false;
-      },
+    glideAcross(direction).then(() => {
+      crossing.current = false;
     });
     return true;
   }
+
+  // --- Walking --------------------------------------------------------------
 
   useEffect(() => {
     let last = 0;
 
     const tick = (now: number) => {
+      // A launch is playing — stay alive while keys are held, resume after
+      if (scripted.current) {
+        last = now;
+        frameId.current = held.current.length ? requestAnimationFrame(tick) : null;
+        return;
+      }
+
       const dt = last ? Math.min((now - last) / 1000, 0.05) : 0;
       last = now;
 
@@ -158,7 +342,7 @@ export function useSpriteMovement(
         frameId.current = null;
         last = 0;
         distance.current = 0;
-        updatePose({ facing: facing ?? poseRef.current.facing, moving: false, step: 0 });
+        updatePose({ facing: facing ?? poseRef.current.facing, action: "idle", step: 0 });
         return;
       }
 
@@ -170,17 +354,17 @@ export function useSpriteMovement(
         const railings = exits.flatMap((edge) => bridgeRailings(edge, vw, vh));
 
         const len = Math.hypot(dx, dy);
-        const p = pos.current;
-        p.x += (dx / len) * travel;
+        const b = body.current;
+        b.x += (dx / len) * travel;
         collide(railings, dx, 0);
-        p.y += (dy / len) * travel;
+        b.y += (dy / len) * travel;
         collide(railings, 0, dy);
 
         const pushed: Direction[] = [];
-        if (p.x < 0) pushed.push("left");
-        else if (p.x > vw - width) pushed.push("right");
-        if (p.y < 0) pushed.push("up");
-        else if (p.y > vh - height) pushed.push("down");
+        if (b.x < 0) pushed.push("left");
+        else if (b.x > vw - width) pushed.push("right");
+        if (b.y < 0) pushed.push("up");
+        else if (b.y > vh - height) pushed.push("down");
 
         clamp();
         const left = pushed.some((edge) => exits.includes(edge) && onDeck(edge) && cross(edge));
@@ -188,7 +372,7 @@ export function useSpriteMovement(
       }
 
       distance.current += travel;
-      updatePose({ facing, moving: true, step: Math.floor(distance.current / STRIDE) });
+      updatePose({ facing, action: "walk", step: Math.floor(distance.current / STRIDE) });
 
       frameId.current = requestAnimationFrame(tick);
     };
@@ -244,5 +428,5 @@ export function useSpriteMovement(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disabled]);
 
-  return { pose, ready };
+  return { rootRef, bodyRef, shadowRef, pose, ready, launch };
 }

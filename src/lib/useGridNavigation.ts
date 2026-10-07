@@ -17,8 +17,13 @@ const SWIPE_THRESHOLD = 50;
 const ANIMATION_DURATION = 0.4;
 export const TRANSITION_EASE = [0.25, 0.1, 0.25, 1.0] as const;
 
-export function useGridNavigation(options?: { disabled?: boolean }) {
+export function useGridNavigation(options?: {
+  disabled?: boolean;
+  /** Handles swipes / scrolls instead of moving rooms directly (the sprite launches) */
+  onSwipe?: (direction: Direction) => void;
+}) {
   const disabled = options?.disabled ?? false;
+  const onSwipe = options?.onSwipe;
   const reducedMotion = useReducedMotion();
   const [currentRoom, setCurrentRoom] = useState<RoomId>(DEFAULT_ROOM);
   const [previousRoom, setPreviousRoom] = useState<RoomId | null>(null);
@@ -145,13 +150,13 @@ export function useGridNavigation(options?: { disabled?: boolean }) {
         }
         wheelAccX.current = 0;
         wheelAccY.current = 0;
-        move(direction);
+        (onSwipe ?? move)(direction);
       }
     };
 
     window.addEventListener("wheel", handleWheel, { passive: false });
     return () => window.removeEventListener("wheel", handleWheel);
-  }, [move, disabled]);
+  }, [move, onSwipe, disabled]);
 
   // Keyboard handler
   useEffect(() => {
@@ -199,7 +204,7 @@ export function useGridNavigation(options?: { disabled?: boolean }) {
         direction = dy < 0 ? "down" : "up";
       }
 
-      move(direction);
+      (onSwipe ?? move)(direction);
     };
 
     window.addEventListener("touchstart", handleTouchStart, { passive: true });
@@ -208,7 +213,7 @@ export function useGridNavigation(options?: { disabled?: boolean }) {
       window.removeEventListener("touchstart", handleTouchStart);
       window.removeEventListener("touchend", handleTouchEnd);
     };
-  }, [move, disabled]);
+  }, [move, onSwipe, disabled]);
 
   return {
     currentRoom,

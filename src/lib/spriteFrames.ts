@@ -1,4 +1,5 @@
 import { Direction } from "./grid";
+import type { SpritePose } from "./useSpriteMovement";
 
 // Placeholder pixel art. Each frame is a grid of palette keys; "." is transparent.
 // Side frames face right — left is the same art mirrored.
@@ -17,6 +18,8 @@ export const SPRITE_PALETTE: Record<string, string> = {
   e: "#2b2a33", // eyes
   t: "#5b6b8c", // shirt
   p: "#3b3f4f", // pants
+  y: "#f2c94c", // dizzy stars
+  x: "rgba(43, 42, 51, 0.16)", // ground shadow
 };
 
 export type Frame = readonly string[];
@@ -80,7 +83,6 @@ function front(head: string[], legs: string[]): Frame {
 export interface FrameSet {
   idle: Frame;
   walk: readonly Frame[]; // looped while moving
-  mirror?: boolean;
 }
 
 const down: FrameSet = {
@@ -107,6 +109,100 @@ const sideIdle = [...SIDE_UPPER, ...LEGS_SIDE_IDLE];
 const sideStride = [...SIDE_UPPER, ...LEGS_SIDE_STRIDE];
 
 const right: FrameSet = { idle: sideIdle, walk: [sideStride, sideIdle] };
-const left: FrameSet = { ...right, mirror: true };
+const left = right;
 
 export const SPRITE_FRAMES: Record<Direction, FrameSet> = { up, down, left, right };
+
+// --- Flight, knock-back and crash ---------------------------------------
+
+// Superhero pose: arms straight overhead, legs together
+const FLY_LOWER = [
+  "otttttttttto",
+  ".otttttttto.",
+  ".otttttttto.",
+  "..otttttto..",
+  "..oppppppo..",
+  "..oppooppo..",
+  "...oppppo...",
+  "....oooo....",
+];
+
+const FLY_UP: Frame = [
+  "oo.oooooo.oo",
+  "os.ohhhho.so",
+  "osohhhhhhoso",
+  "otohhhhhhoto",
+  "otohhhhhhoto",
+  "otohhhhhhoto",
+  "otohhhhhhoto",
+  "otossssssoto",
+  ...FLY_LOWER,
+];
+
+// Flying down: the same back view as FLY_UP, turned 180° — fists and head lead, legs trail
+const FLY_DOWN: Frame = [...FLY_UP].reverse().map((row) => [...row].reverse().join(""));
+
+// Flying sideways (faces right, the way he's going): fist forward, legs trailing, flailing
+const TUMBLE: readonly Frame[] = [
+  [
+    ...SIDE_UPPER.slice(0, 8),
+    "...ottttooo.",
+    "..otttttttso",
+    "..ottttttoo.",
+    "..opppppo...",
+    ".oppppppo...",
+    "oppppoo.....",
+    "ooooo.......",
+    "............",
+  ],
+  [
+    ...SIDE_UPPER.slice(0, 8),
+    "...ottttoos.",
+    "..ottttttoo.",
+    "..otttttto..",
+    "..opppppo...",
+    "..opppppo...",
+    ".opppooo....",
+    ".oooo.......",
+    "............",
+  ],
+];
+
+// Seeing stars — the two frames swap the stars to make them twinkle
+const DAZED_FACE = ".oseesseeso.";
+const dazed = (r0: string, r2: string): Frame => [
+  r0,
+  HEAD_FRONT[1],
+  r2,
+  ...HEAD_FRONT.slice(3, 5),
+  DAZED_FACE,
+  ...HEAD_FRONT.slice(6),
+  ...TORSO_FRONT,
+  ...LEGS_FRONT_IDLE,
+];
+const DAZED: readonly Frame[] = [
+  dazed("y..oooooo...", ".ohhhhhhhhoy"),
+  dazed("...oooooo..y", "yohhhhhhhho."),
+];
+
+export const SPRITE_SHADOW: Frame = [".oooooooo.", "oooooooooo", ".oooooooo."].map((r) =>
+  r.replaceAll("o", "x")
+);
+
+/** The art for a pose. Side-facing art is mirrored for "left". */
+export function getFrame({ facing, action, step }: SpritePose): { frame: Frame; mirror: boolean } {
+  const set = SPRITE_FRAMES[facing];
+  const mirror = facing === "left";
+  switch (action) {
+    case "walk":
+      return { frame: set.walk[step % set.walk.length], mirror };
+    case "fly":
+      return { frame: facing === "up" ? FLY_UP : FLY_DOWN, mirror: false };
+    case "tumble":
+      return { frame: TUMBLE[step % TUMBLE.length], mirror };
+    case "dazed":
+      return { frame: DAZED[step % DAZED.length], mirror: false };
+    default:
+      return { frame: set.idle, mirror };
+  }
+}
