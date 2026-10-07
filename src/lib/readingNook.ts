@@ -1,14 +1,12 @@
 // The reading nook in the library's top-right corner: an armchair, a floor
 // lamp and a side table with the day's paper. Walk up to the chair and press
-// Space to sit, Space again to read.
+// Space to sit, Space again to read (see seat.ts).
 //
-// Art is a grid of palette keys per row, "." transparent — the same format,
-// scale and outline colour as the sprite, so the furniture sits on its pixel grid.
+// Same pixel grid and outline colour as the sprite, so the furniture sits in his world.
 
-export type Frame = readonly string[];
-export type Palette = Record<string, string>;
-
-export const NOOK_SCALE = 3; // screen px per art px — matches the sprite
+import { Frame, Palette, PIXEL_SCALE } from "./pixelArt";
+import { Rect } from "./bridges";
+import { SeatState } from "./seat";
 
 export const NOOK_PALETTE: Palette = {
   o: "#2b2a33", // outline
@@ -206,19 +204,6 @@ function overlay(base: Frame, top: Frame, x: number, y: number): Frame {
 
 // --- Sitting and reading -----------------------------------------------------
 
-export type SeatState = "empty" | "sitting" | "reading";
-
-/**
- * Space: sits down when standing at the chair, then opens the paper, then
- * folds it again. Walking (any arrow key) gets back up — see `standUp`.
- */
-export function pressSpace(state: SeatState, atChair: boolean): SeatState {
-  if (state === "empty") return atChair ? "sitting" : "empty";
-  return state === "sitting" ? "reading" : "sitting";
-}
-
-export const standUp = (): SeatState => "empty";
-
 const SITTER_AT = { x: 7, y: 3 }; // where the sitter sits in the chair art
 
 export const CHAIR_ART: Record<SeatState, Frame> = {
@@ -249,29 +234,25 @@ export const NOOK_LAYOUT = {
 export const NOOK_COLS = 60;
 export const NOOK_ROWS = 38;
 
-/** Distance from the room's top-right corner, in screen px — clears the top exit label. */
-export const NOOK_INSET = { top: 72, right: 110 };
+/** Placement in the room, in screen px: in from the top-right corner, but never off a narrow screen. */
+export const NOOK_INSET = { top: 100, right: 200, minLeft: 16 };
 
 /** Centre of the lamp shade, in art px — where its glow comes from. */
 export const LAMP_LIGHT = { x: NOOK_LAYOUT.lamp.x + 6.5, y: NOOK_LAYOUT.lamp.y + 4 };
 
 // --- Geometry for the sprite (screen px) ------------------------------------
 
-export interface Rect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
 const FLOOR = 23; // art row where the furniture meets the floor
 const SEAT = { x: 26, w: 14 }; // the cushion, in art px across the nook
 
+const px = (n: number) => n * PIXEL_SCALE;
+
+/** The nook's top-left corner. `nookLeftCss` is the same rule for the stylesheet. */
 function origin(vw: number) {
-  return { x: vw - NOOK_INSET.right - NOOK_COLS * NOOK_SCALE, y: NOOK_INSET.top };
+  return { x: Math.max(NOOK_INSET.minLeft, vw - NOOK_INSET.right - px(NOOK_COLS)), y: NOOK_INSET.top };
 }
 
-const px = (n: number) => n * NOOK_SCALE;
+export const nookLeftCss = `max(${NOOK_INSET.minLeft}px, calc(100vw - ${NOOK_INSET.right + px(NOOK_COLS)}px))`;
 
 /** Solid: the furniture and the corner behind it, up to the top of the room. */
 export function nookSolids(vw: number): Rect[] {

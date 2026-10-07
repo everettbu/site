@@ -1,8 +1,8 @@
-import { memo } from "react";
+import { useContext } from "react";
+import { PIXEL_SCALE, Frame } from "@/lib/pixelArt";
+import { SeatContext } from "@/lib/seat";
 import {
-  Frame,
   NOOK_PALETTE,
-  NOOK_SCALE,
   NOOK_COLS,
   NOOK_ROWS,
   NOOK_INSET,
@@ -12,48 +12,30 @@ import {
   TABLE_ART,
   LAMP_ART,
   RUG_ART,
-  SeatState,
+  nookLeftCss,
 } from "@/lib/readingNook";
+import PixelArt from "./PixelArt";
 
-/** One SVG path per colour, positioned in art px inside the nook. */
-const Piece = memo(function Piece({ frame, at }: { frame: Frame; at: { x: number; y: number } }) {
-  const paths: Record<string, string> = {};
-  frame.forEach((row, y) => {
-    for (let x = 0; x < row.length; x++) {
-      const key = row[x];
-      if (key !== ".") paths[key] = (paths[key] ?? "") + `M${x} ${y}h1v1h-1z`;
-    }
-  });
-  const cols = frame[0].length;
-  const rows = frame.length;
+function Piece({ frame, at }: { frame: Frame; at: { x: number; y: number } }) {
   return (
-    <svg
-      width={cols * NOOK_SCALE}
-      height={rows * NOOK_SCALE}
-      viewBox={`0 0 ${cols} ${rows}`}
-      shapeRendering="crispEdges"
-      className="absolute block"
-      style={{ left: at.x * NOOK_SCALE, top: at.y * NOOK_SCALE }}
-      aria-hidden
-    >
-      {Object.entries(paths).map(([key, d]) => (
-        <path key={key} d={d} fill={NOOK_PALETTE[key]} />
-      ))}
-    </svg>
+    <div className="absolute" style={{ left: at.x * PIXEL_SCALE, top: at.y * PIXEL_SCALE }}>
+      <PixelArt frame={frame} palette={NOOK_PALETTE} />
+    </div>
   );
-});
+}
 
 const GLOW = 180; // px across the lamp's pool of light
 
-export default function ReadingNook({ state = "empty" }: { state?: SeatState }) {
+export default function ReadingNook() {
+  const state = useContext(SeatContext);
   return (
     <div
       className="absolute pointer-events-none"
       style={{
         top: NOOK_INSET.top,
-        right: NOOK_INSET.right,
-        width: NOOK_COLS * NOOK_SCALE,
-        height: NOOK_ROWS * NOOK_SCALE,
+        left: nookLeftCss,
+        width: NOOK_COLS * PIXEL_SCALE,
+        height: NOOK_ROWS * PIXEL_SCALE,
       }}
       aria-hidden
     >
@@ -62,8 +44,8 @@ export default function ReadingNook({ state = "empty" }: { state?: SeatState }) 
         style={{
           width: GLOW,
           height: GLOW,
-          left: LAMP_LIGHT.x * NOOK_SCALE - GLOW / 2,
-          top: LAMP_LIGHT.y * NOOK_SCALE - GLOW / 2,
+          left: LAMP_LIGHT.x * PIXEL_SCALE - GLOW / 2,
+          top: LAMP_LIGHT.y * PIXEL_SCALE - GLOW / 2,
           background: "radial-gradient(closest-side, rgba(255, 228, 150, 0.35), rgba(255, 228, 150, 0))",
         }}
       />

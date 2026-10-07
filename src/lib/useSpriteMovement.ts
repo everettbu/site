@@ -5,6 +5,8 @@ import { animate, useReducedMotion, Easing } from "motion/react";
 import { Direction } from "./grid";
 import { Rect, WATER, deckSpan, bridgeRailings, waterRects } from "./bridges";
 import { TRANSITION_EASE } from "./useGridNavigation";
+import { RoomProps } from "./roomProps";
+import { SeatState, pressSpace } from "./seat";
 
 const SPEED = 260; // walking, px per second
 const STRIDE = 14; // px travelled per walk frame
@@ -52,8 +54,9 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
  * swipe) — a superhero flight up/down, or a knock-back left/right.
  *
  * Screen edges are walls; the only way out is across a bridge deck on one of
- * the room's `exits`. Bridge railings — and, around an island room, the
- * water — collide with the sprite's feet.
+ * the room's `exits`. Bridge railings, the water along a room's edges and the
+ * room's furniture (`props`) collide with the sprite's feet. Space sits him in
+ * the room's chair when he's standing at it; walking or a swipe gets him up.
  * Leaving calls `onExit`; if that starts a room transition, the sprite glides
  * to the opposite edge in step with the room slide.
  *
@@ -69,12 +72,15 @@ export function useSpriteMovement(
     onExit?: (direction: Direction) => boolean;
     exitDuration?: number;
     getScroller?: () => HTMLElement | undefined; // the current room's, if it is taller than the viewport
+    props?: RoomProps; // the current room's furniture
+    onSeatChange?: (state: SeatState) => void;
   }
 ) {
   const disabled = options?.disabled ?? false;
   const reducedMotion = useReducedMotion();
   const [pose, setPose] = useState<SpritePose>({ facing: "down", action: "idle", step: 0 });
   const [ready, setReady] = useState(false);
+  const [seated, setSeated] = useState(false); // hidden — the chair art draws him
 
   const rootRef = useRef<HTMLDivElement>(null); // position
   const bodyRef = useRef<HTMLDivElement>(null); // height + squash
@@ -88,6 +94,7 @@ export function useSpriteMovement(
   const crossing = useRef(false); // walking glide into the next room
   const scripted = useRef(false); // a launch owns the sprite
   const launchLockedUntil = useRef(0);
+  const seat = useRef<SeatState>("empty");
 
   // Latest room/callbacks without re-subscribing listeners
   const optionsRef = useRef(options);
@@ -98,6 +105,13 @@ export function useSpriteMovement(
   });
 
   const { width, height, feet } = box;
+
+  // The room changed under him (the map) — he's no longer in that chair
+  const props = options?.props;
+  useEffect(() => {
+    if (seat.current !== "empty") setSeat("empty");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props]);
 
   // Start in the centre — where landings and H put him, and in line with the side bridge decks
   useLayoutEffect(() => {
@@ -220,12 +234,21 @@ export function useSpriteMovement(
     }
   }
 
-  /** Everything the feet can't walk through: bridge railings, and water along the room's edges. */
+  /** The room's furniture. */
+  function furniture() {
+    return optionsRef.current?.props?.solids(window.innerWidth, window.innerHeight) ?? [];
+  }
+
+  /** Everything the feet can't walk through: bridge railings, water along the room's edges, furniture. */
   function solids() {
     const { innerWidth: vw, innerHeight: vh } = window;
     const exits = optionsRef.current?.exits ?? [];
     const water = optionsRef.current?.water ?? [];
-    return [...exits.flatMap((edge) => bridgeRailings(edge, vw, vh)), ...waterRects(water, exits, vw, vh)];
+    return [
+      ...exits.flatMap((edge) => bridgeRailings(edge, vw, vh)),
+      ...waterRects(water, exits, vw, vh),
+      ...furniture(),
+    ];
   }
 
   /** If the feet would end up in the water at `p`, bring them onto the shore instead. */
@@ -252,7 +275,7 @@ export function useSpriteMovement(
   }
 
   /**
-   * Where a flight in `direction` ends: through a bridge, or against a wall / railing.
+   * Where a flight in `direction` ends: through a bridge, or against a wall / railing / furniture.
    * Flights never scroll a tall room — the screen edge is a wall unless that edge's bridge is in view.
    */
   function flightPath(direction: Direction) {
@@ -263,25 +286,35 @@ export function useSpriteMovement(
       !isVertical(direction) ||
       (direction === "up" ? scroll.el.scrollTop <= 0 : scroll.el.scrollTop >= scroll.max - 1);
     const hasBridge = bridgeInView && (optionsRef.current?.exits ?? []).includes(direction);
-    const through = hasBridge && onDeck(direction);
+    let through = hasBridge && onDeck(direction);
 
     const b = body.current;
     // Vertical flights are airborne, so the drawn sprite meets the wall FLY_HEIGHT later
     let stop = { up: FLY_HEIGHT, down: vh - height + FLY_HEIGHT, left: 0, right: vw - width }[direction];
 
+    const fx = b.x + feet.x;
+    const fy = b.y + feet.y;
+    const inLine = (r: Rect) =>
+      isVertical(direction) ? fx < r.x + r.w && fx + feet.w > r.x : fy < r.y + r.h && fy + feet.h > r.y;
+    const ahead = (r: Rect) =>
+      ({ up: r.y + r.h <= fy, down: r.y >= fy + feet.h, left: r.x + r.w <= fx, right: r.x >= fx + feet.w })[direction];
+    const hitAt = (r: Rect) =>
+      ({
+        up: r.y + r.h - feet.y,
+        down: r.y - feet.y - feet.h,
+        left: r.x + r.w - feet.x,
+        right: r.x - feet.x - feet.w,
+      })[direction];
+    const nearer = (a: number, b: number) => (direction === "up" || direction === "left" ? Math.max(a, b) : Math.min(a, b));
+
     if (!through && hasBridge) {
-      const fx = b.x + feet.x;
-      const fy = b.y + feet.y;
-      for (const r of bridgeRailings(direction, vw, vh)) {
-        const inLine = isVertical(direction)
-          ? fx < r.x + r.w && fx + feet.w > r.x
-          : fy < r.y + r.h && fy + feet.h > r.y;
-        if (!inLine) continue;
-        if (direction === "up") stop = Math.max(stop, r.y + r.h - feet.y);
-        if (direction === "down") stop = Math.min(stop, r.y - feet.y - feet.h);
-        if (direction === "left") stop = Math.max(stop, r.x + r.w - feet.x);
-        if (direction === "right") stop = Math.min(stop, r.x - feet.x - feet.w);
-      }
+      for (const r of bridgeRailings(direction, vw, vh)) if (inLine(r)) stop = nearer(stop, hitAt(r));
+    }
+    // Furniture in the way stops him short — even of a bridge
+    for (const r of furniture()) {
+      if (!inLine(r) || !ahead(r)) continue;
+      stop = nearer(stop, hitAt(r));
+      through = false;
     }
 
     // Never fly backwards when already against the wall
@@ -295,6 +328,7 @@ export function useSpriteMovement(
   async function launch(direction: Direction) {
     if (disabled || scripted.current || crossing.current) return;
     if (Date.now() < launchLockedUntil.current) return;
+    getUp();
     scripted.current = true;
 
     const vertical = isVertical(direction);
@@ -380,6 +414,7 @@ export function useSpriteMovement(
   /** Back to the middle of the room, in step with the home crossfade. */
   async function recentre() {
     if (scripted.current || crossing.current) return;
+    getUp();
     scripted.current = true;
     updatePose({ facing: "down", action: "idle", step: 0 });
     await tween(
@@ -398,6 +433,44 @@ export function useSpriteMovement(
       crossing.current = false;
     });
     return true;
+  }
+
+  // --- Sitting --------------------------------------------------------------
+
+  function setSeat(next: SeatState) {
+    if (next === seat.current) return;
+    seat.current = next;
+    setSeated(next !== "empty");
+    optionsRef.current?.onSeatChange?.(next);
+  }
+
+  /** Space: sit when standing at the chair, then read, then fold the paper. */
+  function sitOrRead() {
+    if (scripted.current || crossing.current) return;
+    const chair = optionsRef.current?.props?.seat?.(window.innerWidth, window.innerHeight);
+    const b = body.current;
+    const atChair =
+      !!chair &&
+      b.x + feet.x < chair.zone.x + chair.zone.w &&
+      b.x + feet.x + feet.w > chair.zone.x &&
+      b.y + feet.y < chair.zone.y + chair.zone.h &&
+      b.y + feet.y + feet.h > chair.zone.y;
+    const next = pressSpace(seat.current, atChair);
+    if (next !== "empty" && seat.current === "empty") held.current = [];
+    setSeat(next);
+  }
+
+  /** Stand up in front of the chair, facing the room. */
+  function getUp() {
+    if (seat.current === "empty") return;
+    const chair = optionsRef.current?.props?.seat?.(window.innerWidth, window.innerHeight);
+    if (chair) {
+      body.current.x = chair.spot.x - feet.x - feet.w / 2;
+      body.current.y = chair.spot.y - feet.y;
+      apply();
+    }
+    updatePose({ facing: "down", action: "idle", step: 0 });
+    setSeat("empty");
   }
 
   // --- Walking --------------------------------------------------------------
@@ -475,10 +548,17 @@ export function useSpriteMovement(
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
+      if (e.key === " ") {
+        e.preventDefault();
+        if (!e.repeat) sitOrRead();
+        return;
+      }
+
       const direction = KEY_DIRECTIONS[e.key.length === 1 ? e.key.toLowerCase() : e.key];
       if (!direction) return;
 
       e.preventDefault();
+      getUp();
       if (!held.current.includes(direction)) held.current.push(direction);
       start();
     };
@@ -512,5 +592,5 @@ export function useSpriteMovement(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disabled]);
 
-  return { rootRef, bodyRef, shadowRef, pose, ready, launch, recentre };
+  return { rootRef, bodyRef, shadowRef, pose, ready, seated, launch, recentre };
 }

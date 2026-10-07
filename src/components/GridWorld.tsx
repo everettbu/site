@@ -6,6 +6,8 @@ import { useGridNavigation, TRANSITION_EASE } from "@/lib/useGridNavigation";
 import { Direction, RoomId, DEFAULT_ROOM, rooms } from "@/lib/grid";
 import { BRIDGES } from "@/lib/bridges";
 import { RoomScrollContext } from "@/lib/roomScroll";
+import { ROOM_PROPS } from "@/lib/roomProps";
+import { SeatContext, SeatState } from "@/lib/seat";
 import Minimap from "./Minimap";
 import MapOverlay from "./MapOverlay";
 import NavigationHint from "./NavigationHint";
@@ -112,6 +114,7 @@ function RoomView({
 
 export default function GridWorld() {
   const [isMapOpen, setIsMapOpen] = useState(false);
+  const [seat, setSeat] = useState<SeatState>("empty");
   const spriteRef = useRef<SpriteHandle>(null);
   const scrollers = useRef(new Map<RoomId, HTMLElement>()).current; // tall rooms' scroll containers
   const launchSprite = useCallback((d: Direction) => spriteRef.current?.launch(d), []);
@@ -157,40 +160,42 @@ export default function GridWorld() {
 
   return (
     <div className="fixed inset-0 overflow-hidden">
-      {/* Outgoing room (only during transition) */}
-      {isAnimating && previousRoom && (
-        <motion.div
-          key={`out-${previousRoom}`}
-          className="absolute inset-0"
-          initial={{ x: 0, y: 0, opacity: 1 }}
-          animate={
-            transitionDirection
-              ? { ...SLIDE_OFFSETS[OPPOSITE[transitionDirection]], opacity: 1 }
-              : { opacity: 0 }
-          }
-          transition={transitionConfig}
-        >
-          <RoomView roomId={previousRoom} onMove={move} scrollers={scrollers} />
-        </motion.div>
-      )}
+      <SeatContext value={seat}>
+        {/* Outgoing room (only during transition) */}
+        {isAnimating && previousRoom && (
+          <motion.div
+            key={`out-${previousRoom}`}
+            className="absolute inset-0"
+            initial={{ x: 0, y: 0, opacity: 1 }}
+            animate={
+              transitionDirection
+                ? { ...SLIDE_OFFSETS[OPPOSITE[transitionDirection]], opacity: 1 }
+                : { opacity: 0 }
+            }
+            transition={transitionConfig}
+          >
+            <RoomView roomId={previousRoom} onMove={move} scrollers={scrollers} />
+          </motion.div>
+        )}
 
-      {/* Current room */}
-      <motion.div
-        key={`in-${currentRoom}`}
-        className="absolute inset-0"
-        initial={
-          initialLoad
-            ? false
-            : transitionDirection
-              ? { ...SLIDE_OFFSETS[transitionDirection], opacity: 1 }
-              : { opacity: 0 }
-        }
-        animate={{ x: 0, y: 0, opacity: 1 }}
-        transition={initialLoad ? { duration: 0 } : transitionConfig}
-        onAnimationComplete={onAnimationComplete}
-      >
-        <RoomView roomId={currentRoom} onMove={move} scrollers={scrollers} />
-      </motion.div>
+        {/* Current room */}
+        <motion.div
+          key={`in-${currentRoom}`}
+          className="absolute inset-0"
+          initial={
+            initialLoad
+              ? false
+              : transitionDirection
+                ? { ...SLIDE_OFFSETS[transitionDirection], opacity: 1 }
+                : { opacity: 0 }
+          }
+          animate={{ x: 0, y: 0, opacity: 1 }}
+          transition={initialLoad ? { duration: 0 } : transitionConfig}
+          onAnimationComplete={onAnimationComplete}
+        >
+          <RoomView roomId={currentRoom} onMove={move} scrollers={scrollers} />
+        </motion.div>
+      </SeatContext>
 
       <Sprite
         ref={spriteRef}
@@ -200,6 +205,8 @@ export default function GridWorld() {
         onExit={move}
         getScroller={getScroller}
         exitDuration={duration}
+        props={ROOM_PROPS[currentRoom]}
+        onSeatChange={setSeat}
       />
 
       <Minimap currentRoom={currentRoom} onToggle={() => setIsMapOpen((v) => !v)} />

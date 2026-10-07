@@ -12,6 +12,8 @@ import {
   SPRITE_SHADOW,
   getFrame,
 } from "@/lib/spriteFrames";
+import { RoomProps } from "@/lib/roomProps";
+import { SeatState } from "@/lib/seat";
 import PixelArt from "./PixelArt";
 
 const WIDTH = SPRITE_COLS * PIXEL_SCALE;
@@ -43,6 +45,8 @@ interface SpriteProps {
   onExit?: (d: Direction) => boolean;
   exitDuration?: number;
   getScroller?: () => HTMLElement | undefined;
+  props?: RoomProps;
+  onSeatChange?: (state: SeatState) => void;
 }
 
 export default function Sprite({
@@ -53,14 +57,18 @@ export default function Sprite({
   onExit,
   exitDuration,
   getScroller,
+  props,
+  onSeatChange,
 }: SpriteProps) {
-  const { rootRef, bodyRef, shadowRef, pose, ready, launch, recentre } = useSpriteMovement(BOX, {
+  const { rootRef, bodyRef, shadowRef, pose, ready, seated, launch, recentre } = useSpriteMovement(BOX, {
     disabled,
     exits,
     water,
     onExit,
     exitDuration,
     getScroller,
+    props,
+    onSeatChange,
   });
 
   useImperativeHandle(ref, () => ({ launch, recentre }));
@@ -73,7 +81,8 @@ export default function Sprite({
       className={`fixed top-0 left-0 z-40 pointer-events-none will-change-transform transition-opacity duration-500 ${
         ready ? "opacity-100" : "opacity-0"
       }`}
-      style={{ width: WIDTH, height: HEIGHT }}
+      // In a chair, the chair's art draws him
+      style={{ width: WIDTH, height: HEIGHT, visibility: seated ? "hidden" : undefined }}
     >
       {/* Stays on the ground while the body leaves it */}
       <div
