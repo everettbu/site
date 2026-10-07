@@ -5,7 +5,7 @@
 // Same pixel grid and outline colour as the sprite, so the furniture sits in his world.
 
 import { Frame, Palette, PIXEL_SCALE } from "./pixelArt";
-import { Rect } from "./bridges";
+import { BRIDGES, Rect } from "./bridges";
 import { SeatState } from "./seat";
 
 export const NOOK_PALETTE: Palette = {
@@ -234,8 +234,11 @@ export const NOOK_LAYOUT = {
 export const NOOK_COLS = 60;
 export const NOOK_ROWS = 38;
 
-/** Placement in the room, in screen px: in from the top-right corner, but never off a narrow screen. */
-export const NOOK_INSET = { top: 100, right: 200, minLeft: 16 };
+/**
+ * Placement in the room, in screen px: in from the top-right corner, but on a
+ * narrow screen never so far left that the furniture blocks the up bridge.
+ */
+export const NOOK_INSET = { top: 100, right: 200, bridgeClearance: BRIDGES.up.width / 2 + 24 };
 
 /** Centre of the lamp shade, in art px — where its glow comes from. */
 export const LAMP_LIGHT = { x: NOOK_LAYOUT.lamp.x + 6.5, y: NOOK_LAYOUT.lamp.y + 4 };
@@ -247,17 +250,22 @@ const SEAT = { x: 26, w: 14 }; // the cushion, in art px across the nook
 
 const px = (n: number) => n * PIXEL_SCALE;
 
+// The solid starts this far into the nook (the table's left edge)
+const SOLID_LEFT = 5;
+// Leftmost the nook may sit: its solid starts right of the up bridge, with room to walk past
+const minLeft = (vw: number) => vw / 2 + NOOK_INSET.bridgeClearance - px(SOLID_LEFT);
+
 /** The nook's top-left corner. `nookLeftCss` is the same rule for the stylesheet. */
 function origin(vw: number) {
-  return { x: Math.max(NOOK_INSET.minLeft, vw - NOOK_INSET.right - px(NOOK_COLS)), y: NOOK_INSET.top };
+  return { x: Math.max(minLeft(vw), vw - NOOK_INSET.right - px(NOOK_COLS)), y: NOOK_INSET.top };
 }
 
-export const nookLeftCss = `max(${NOOK_INSET.minLeft}px, calc(100vw - ${NOOK_INSET.right + px(NOOK_COLS)}px))`;
+export const nookLeftCss = `max(calc(50vw + ${NOOK_INSET.bridgeClearance - px(SOLID_LEFT)}px), calc(100vw - ${NOOK_INSET.right + px(NOOK_COLS)}px))`;
 
 /** Solid: the furniture and the corner behind it, up to the top of the room. */
 export function nookSolids(vw: number): Rect[] {
   const o = origin(vw);
-  return [{ x: o.x + px(5), y: 0, w: px(54), h: o.y + px(FLOOR) }];
+  return [{ x: o.x + px(SOLID_LEFT), y: 0, w: px(54), h: o.y + px(FLOOR) }];
 }
 
 /** Stand with your feet here to sit down. */
