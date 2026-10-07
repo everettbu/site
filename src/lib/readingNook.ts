@@ -5,7 +5,8 @@
 // Same pixel grid and outline colour as the sprite, so the furniture sits in his world.
 
 import { Frame, Palette, PIXEL_SCALE } from "./pixelArt";
-import { BRIDGES, Rect } from "./bridges";
+import { BRIDGES, Rect, WATER } from "./bridges";
+import { SPRITE_FEET } from "./spriteFrames";
 import { SeatState } from "./seat";
 
 export const NOOK_PALETTE: Palette = {
@@ -236,9 +237,10 @@ export const NOOK_ROWS = 38;
 
 /**
  * Placement in the room, in screen px: in from the top-right corner, but on a
- * narrow screen never so far left that the furniture blocks the up bridge.
+ * narrow screen never so far left that the furniture blocks the up bridge —
+ * at the closest, it sits right up against the bridge's railing.
  */
-export const NOOK_INSET = { top: 100, right: 200, bridgeClearance: BRIDGES.up.width / 2 + 24 };
+export const NOOK_INSET = { top: 100, right: 200, bridgeClearance: BRIDGES.up.width / 2 };
 
 /** Centre of the lamp shade, in art px — where its glow comes from. */
 export const LAMP_LIGHT = { x: NOOK_LAYOUT.lamp.x + 6.5, y: NOOK_LAYOUT.lamp.y + 4 };
@@ -262,8 +264,18 @@ function origin(vw: number) {
 
 export const nookLeftCss = `max(calc(50vw + ${NOOK_INSET.bridgeClearance - px(SOLID_LEFT)}px), calc(100vw - ${NOOK_INSET.right + px(NOOK_COLS)}px))`;
 
+/**
+ * Narrowest screen with room for the nook: pushed right of the up bridge, the
+ * sprite's feet must still fit in front of the seat before the right-edge water.
+ * Below this the library has no nook at all.
+ */
+export const NOOK_MIN_VW = 2 * (NOOK_INSET.bridgeClearance + px(SEAT.x - SOLID_LEFT + SPRITE_FEET.w) + WATER);
+
+export const nookFits = (vw: number) => vw >= NOOK_MIN_VW;
+
 /** Solid: the furniture and the corner behind it, up to the top of the room. */
 export function nookSolids(vw: number): Rect[] {
+  if (!nookFits(vw)) return [];
   const o = origin(vw);
   return [{ x: o.x + px(SOLID_LEFT), y: 0, w: px(54), h: o.y + px(FLOOR) }];
 }

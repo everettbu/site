@@ -784,6 +784,11 @@ export function useSpriteMovement(
         if (!scripted.current) remapBridge(); // a flight across finishes on its own
         return;
       }
+      // Too narrow for the chair now — it's gone, so he's standing
+      if (seat.current !== "empty" && !optionsRef.current?.props?.seat?.(window.innerWidth, window.innerHeight)) {
+        updatePose({ facing: "down", action: "idle", step: 0 });
+        setSeat("empty");
+      }
       clamp();
       apply();
     };
