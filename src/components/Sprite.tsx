@@ -70,14 +70,16 @@ interface SpriteProps {
   exits?: Direction[];
   onExit?: (d: Direction) => boolean;
   exitDuration?: number;
+  getScroller?: () => HTMLElement | undefined;
 }
 
-export default function Sprite({ ref, disabled, exits, onExit, exitDuration }: SpriteProps) {
+export default function Sprite({ ref, disabled, exits, onExit, exitDuration, getScroller }: SpriteProps) {
   const { rootRef, bodyRef, shadowRef, pose, ready, launch, recentre } = useSpriteMovement(BOX, {
     disabled,
     exits,
     onExit,
     exitDuration,
+    getScroller,
   });
 
   useImperativeHandle(ref, () => ({ launch, recentre }));

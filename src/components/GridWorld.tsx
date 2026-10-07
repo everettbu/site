@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import { useGridNavigation, TRANSITION_EASE } from "@/lib/useGridNavigation";
 import { Direction, RoomId, DEFAULT_ROOM, rooms } from "@/lib/grid";
 import { BRIDGES } from "@/lib/bridges";
+import { RoomScrollContext } from "@/lib/roomScroll";
 import Minimap from "./Minimap";
 import MapOverlay from "./MapOverlay";
 import NavigationHint from "./NavigationHint";
@@ -78,15 +79,27 @@ function Bridge({ edge }: { edge: Direction }) {
 function RoomView({
   roomId,
   onMove,
+  scrollers,
 }: {
   roomId: RoomId;
   onMove: (d: Direction) => void;
+  scrollers: Map<RoomId, HTMLElement>;
 }) {
+  const registerScroller = useCallback(
+    (el: HTMLElement | null) => {
+      if (el) scrollers.set(roomId, el);
+      else scrollers.delete(roomId);
+    },
+    [roomId, scrollers]
+  );
+
   const Component = tileComponents[roomId];
   if (!Component) return null;
   return (
     <div className="relative w-[100vw] h-[100dvh]">
-      <Component onMove={onMove} />
+      <RoomScrollContext value={registerScroller}>
+        <Component onMove={onMove} />
+      </RoomScrollContext>
       {(roomId === "home" || roomId === "about") && <Bridge edge="down" />}
       {(roomId === "home" || roomId === "media") && <Bridge edge="up" />}
       {(roomId === "home" || roomId === "library") && <Bridge edge="right" />}
@@ -98,6 +111,7 @@ function RoomView({
 export default function GridWorld() {
   const [isMapOpen, setIsMapOpen] = useState(false);
   const spriteRef = useRef<SpriteHandle>(null);
+  const scrollers = useRef(new Map<RoomId, HTMLElement>()).current; // tall rooms' scroll containers
   const launchSprite = useCallback((d: Direction) => spriteRef.current?.launch(d), []);
   const recentreSprite = useCallback(() => spriteRef.current?.recentre(), []);
 
@@ -128,6 +142,7 @@ export default function GridWorld() {
   );
 
   const isHome = currentRoom === DEFAULT_ROOM;
+  const getScroller = useCallback(() => scrollers.get(currentRoom), [scrollers, currentRoom]);
   const exits = useMemo(
     () => Object.keys(rooms[currentRoom].neighbors) as Direction[],
     [currentRoom]
@@ -153,7 +168,7 @@ export default function GridWorld() {
           }
           transition={transitionConfig}
         >
-          <RoomView roomId={previousRoom} onMove={move} />
+          <RoomView roomId={previousRoom} onMove={move} scrollers={scrollers} />
         </motion.div>
       )}
 
@@ -172,7 +187,7 @@ export default function GridWorld() {
         transition={initialLoad ? { duration: 0 } : transitionConfig}
         onAnimationComplete={onAnimationComplete}
       >
-        <RoomView roomId={currentRoom} onMove={move} />
+        <RoomView roomId={currentRoom} onMove={move} scrollers={scrollers} />
       </motion.div>
 
       <Sprite
@@ -180,6 +195,7 @@ export default function GridWorld() {
         disabled={isMapOpen}
         exits={exits}
         onExit={move}
+        getScroller={getScroller}
         exitDuration={duration}
       />
 

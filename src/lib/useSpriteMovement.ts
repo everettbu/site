@@ -13,6 +13,8 @@ const FLY_HEIGHT = 18; // px off the ground in flight
 const FLAIL_MS = 110; // tumble / stars frame time
 const DAZED_MS = 350;
 const LAUNCH_COOLDOWN = 400; // ms — swallows trackpad inertia after a landing
+const CAMERA_MARGIN = 0.3; // tall rooms scroll to keep the sprite this far (of the viewport) from the edges
+const CAMERA_SPEED = SPEED * 1.6; // px per second — fast enough to lead the walk, catches up smoothly
 
 const KEY_DIRECTIONS: Record<string, Direction> = {
   ArrowUp: "up",
@@ -64,6 +66,7 @@ export function useSpriteMovement(
     exits?: Direction[];
     onExit?: (direction: Direction) => boolean;
     exitDuration?: number;
+    getScroller?: () => HTMLElement | undefined; // the current room's, if it is taller than the viewport
   }
 ) {
   const disabled = options?.disabled ?? false;
@@ -167,6 +170,38 @@ export function useSpriteMovement(
     return tween(to, optionsRef.current?.exitDuration ?? 0, TRANSITION_EASE);
   }
 
+  // --- Camera (tall rooms) ----------------------------------------------------
+
+  function scroller() {
+    const el = optionsRef.current?.getScroller?.();
+    const max = el ? el.scrollHeight - el.clientHeight : 0;
+    return el && max > 0 ? { el, max } : null;
+  }
+
+  /**
+   * Scroll a tall room so the sprite stays in the middle band of the screen.
+   * Scrolling stops at the room's ends, so the screen edges are its walls there.
+   * The camera's speed is capped, so it eases back to the band (e.g. after a crash) instead of jumping.
+   */
+  function followCamera(dt: number) {
+    const scroll = scroller();
+    if (!scroll) return;
+    const { el, max } = scroll;
+    const b = body.current;
+    const vh = window.innerHeight;
+    const world = b.y + el.scrollTop;
+    const top = vh * CAMERA_MARGIN;
+    const bottom = vh * (1 - CAMERA_MARGIN) - height;
+
+    let shift = 0;
+    if (b.y > bottom) shift = b.y - bottom;
+    else if (b.y < top) shift = b.y - top;
+    const step = CAMERA_SPEED * dt;
+    shift = Math.min(Math.max(shift, -step), step);
+    el.scrollTop = Math.min(Math.max(el.scrollTop + shift, 0), max);
+    b.y = world - el.scrollTop; // read back — the browser may round
+  }
+
   // --- Collision ------------------------------------------------------------
 
   // Push the feet back out of any rect they ran into along the axis of travel
@@ -189,17 +224,25 @@ export function useSpriteMovement(
     return start >= a && start + (isVertical(edge) ? feet.w : feet.h) <= b;
   }
 
-  /** Where a flight in `direction` ends: through a bridge, or against a wall / railing. */
+  /**
+   * Where a flight in `direction` ends: through a bridge, or against a wall / railing.
+   * Flights never scroll a tall room — the screen edge is a wall unless that edge's bridge is in view.
+   */
   function flightPath(direction: Direction) {
     const { innerWidth: vw, innerHeight: vh } = window;
-    const exits = optionsRef.current?.exits ?? [];
-    const through = exits.includes(direction) && onDeck(direction);
+    const scroll = scroller();
+    const bridgeInView =
+      !scroll ||
+      !isVertical(direction) ||
+      (direction === "up" ? scroll.el.scrollTop <= 0 : scroll.el.scrollTop >= scroll.max - 1);
+    const hasBridge = bridgeInView && (optionsRef.current?.exits ?? []).includes(direction);
+    const through = hasBridge && onDeck(direction);
 
     const b = body.current;
     // Vertical flights are airborne, so the drawn sprite meets the wall FLY_HEIGHT later
     let stop = { up: FLY_HEIGHT, down: vh - height + FLY_HEIGHT, left: 0, right: vw - width }[direction];
 
-    if (!through && exits.includes(direction)) {
+    if (!through && hasBridge) {
       const fx = b.x + feet.x;
       const fy = b.y + feet.y;
       for (const r of bridgeRailings(direction, vw, vh)) {
@@ -217,7 +260,7 @@ export function useSpriteMovement(
     // Never fly backwards when already against the wall
     const current = isVertical(direction) ? b.y : b.x;
     stop = direction === "up" || direction === "left" ? Math.min(stop, current) : Math.max(stop, current);
-    return { stop, through };
+    return { stop, from: current, through };
   }
 
   // --- Launch ---------------------------------------------------------------
@@ -228,9 +271,8 @@ export function useSpriteMovement(
     scripted.current = true;
 
     const vertical = isVertical(direction);
-    const axis = vertical ? "y" : "x";
-    const { stop, through } = flightPath(direction);
-    const flightTime = Math.max(Math.abs(stop - body.current[axis]) / FLY_SPEED, 0.12);
+    const { stop, from, through } = flightPath(direction);
+    const flightTime = Math.max(Math.abs(stop - from) / FLY_SPEED, 0.12);
 
     if (vertical) {
       // Crouch, spring up, fly
@@ -238,10 +280,10 @@ export function useSpriteMovement(
       await tween({ sx: 1.15, sy: 0.8 }, 0.1, "easeOut");
       updatePose({ facing: direction, action: "fly", step: 0 });
       await tween({ sx: 0.9, sy: 1.15, z: FLY_HEIGHT * 0.6 }, 0.08, "easeOut");
-      await tween({ [axis]: stop, z: FLY_HEIGHT, sx: 1, sy: 1 }, flightTime, [0.4, 0, 1, 1]);
+      await tween({ y: stop, z: FLY_HEIGHT, sx: 1, sy: 1 }, flightTime, [0.4, 0, 1, 1]);
     } else {
       // Knocked off his feet — flies sideways, flailing
-      await tween({ [axis]: stop }, flightTime, "linear", (t, ms) => {
+      await tween({ x: stop }, flightTime, "linear", (t, ms) => {
         body.current.z = FLY_HEIGHT * 0.6 * Math.min(t * 5, 1);
         updatePose({ facing: direction, action: "tumble", step: Math.floor(ms / FLAIL_MS) });
       });
@@ -372,6 +414,7 @@ export function useSpriteMovement(
         collide(railings, dx, 0);
         b.y += (dy / len) * travel;
         collide(railings, 0, dy);
+        followCamera(dt);
 
         const pushed: Direction[] = [];
         if (b.x < 0) pushed.push("left");

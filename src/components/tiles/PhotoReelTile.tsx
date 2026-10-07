@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { Direction } from "@/lib/grid";
+import { useRoomScroller } from "@/lib/roomScroll";
 
 export interface Photo {
   src: string;
@@ -103,9 +104,10 @@ function Lightbox({
 
 export default function PhotoReelTile({ onMove }: PhotoReelTileProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const scrollerRef = useRoomScroller(); // tall room — the sprite's camera scrolls it
 
   return (
-    <div className="h-full w-full relative overflow-hidden">
+    <div ref={scrollerRef} className="h-full w-full relative overflow-hidden">
       {/* Navigation arrow */}
       <button
         onClick={() => onMove("up")}
