@@ -1,4 +1,5 @@
 import { Direction } from "@/lib/grid";
+import ReadingNook from "../ReadingNook";
 
 interface LibraryTileProps {
   onMove: (d: Direction) => void;
@@ -7,6 +8,7 @@ interface LibraryTileProps {
 export default function LibraryTile({ onMove }: LibraryTileProps) {
   return (
     <div className="h-full w-full flex items-center justify-center relative">
+      <ReadingNook />
       <button
         onClick={() => onMove("up")}
         className="absolute top-12 text-xs font-light tracking-widest uppercase text-neutral-400 hover:text-neutral-900 transition-colors cursor-pointer"

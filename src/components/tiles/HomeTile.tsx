@@ -31,10 +31,6 @@ export default function HomeTile({ onMove }: HomeTileProps) {
       >
         Projects
       </button>
-
-      <h1 className="-translate-y-16 text-2xl font-light tracking-widest uppercase">
-        Everett Butler
-      </h1>
     </div>
   );
 }

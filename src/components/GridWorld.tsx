@@ -6,6 +6,8 @@ import { useGridNavigation, TRANSITION_EASE } from "@/lib/useGridNavigation";
 import { Direction, RoomId, DEFAULT_ROOM, rooms } from "@/lib/grid";
 import { BRIDGES, BRIDGE_GAP, crossingGap } from "@/lib/bridges";
 import { RoomScrollContext } from "@/lib/roomScroll";
+import { ROOM_PROPS } from "@/lib/roomProps";
+import { SeatContext, SeatState } from "@/lib/seat";
 import Minimap from "./Minimap";
 import MapOverlay from "./MapOverlay";
 import NavigationHint from "./NavigationHint";
@@ -124,6 +126,7 @@ function RoomView({
 
 export default function GridWorld() {
   const [isMapOpen, setIsMapOpen] = useState(false);
+  const [seat, setSeat] = useState<SeatState>("empty");
   const spriteRef = useRef<SpriteHandle>(null);
   const scrollers = useRef(new Map<RoomId, HTMLElement>()).current; // tall rooms' scroll containers
   const launchSprite = useCallback((d: Direction) => spriteRef.current?.launch(d), []);
@@ -201,56 +204,58 @@ export default function GridWorld() {
 
   return (
     <div className="fixed inset-0 overflow-hidden">
-      <div ref={cameraRef} className="absolute inset-0 will-change-transform">
-        {/* Outgoing room (only during transition) */}
-        {isAnimating && previousRoom && (
+      <SeatContext value={seat}>
+        <div ref={cameraRef} className="absolute inset-0 will-change-transform">
+          {/* Outgoing room (only during transition) */}
+          {isAnimating && previousRoom && (
+            <motion.div
+              key={`out-${previousRoom}`}
+              className="absolute inset-0"
+              initial={{ x: 0, y: 0, opacity: 1 }}
+              animate={
+                transitionDirection
+                  ? { ...SLIDE_OFFSETS[OPPOSITE[transitionDirection]], opacity: 1 }
+                  : { opacity: 0 }
+              }
+              transition={transitionConfig}
+            >
+              <RoomView roomId={previousRoom} onMove={moveFromTile} scrollers={scrollers} />
+            </motion.div>
+          )}
+
+          {/* Across a long bridge: the gap, and the room beyond — becomes the current room on arrival */}
+          {crossing && <BridgeGap direction={crossing.direction} from={currentRoom} to={crossing.to} />}
+          {crossing && (
+            <motion.div
+              key={`in-${crossing.to}`}
+              className="absolute inset-0"
+              style={{ translate: ACROSS[crossing.direction] }}
+              initial={false}
+              animate={{ x: 0, y: 0, opacity: 1 }}
+            >
+              <RoomView roomId={crossing.to} onMove={moveFromTile} scrollers={scrollers} />
+            </motion.div>
+          )}
+
+          {/* Current room */}
           <motion.div
-            key={`out-${previousRoom}`}
+            key={`in-${currentRoom}`}
             className="absolute inset-0"
-            initial={{ x: 0, y: 0, opacity: 1 }}
-            animate={
-              transitionDirection
-                ? { ...SLIDE_OFFSETS[OPPOSITE[transitionDirection]], opacity: 1 }
-                : { opacity: 0 }
+            initial={
+              initialLoad
+                ? false
+                : transitionDirection
+                  ? { ...SLIDE_OFFSETS[transitionDirection], opacity: 1 }
+                  : { opacity: 0 }
             }
-            transition={transitionConfig}
-          >
-            <RoomView roomId={previousRoom} onMove={moveFromTile} scrollers={scrollers} />
-          </motion.div>
-        )}
-
-        {/* Across a long bridge: the gap, and the room beyond — becomes the current room on arrival */}
-        {crossing && <BridgeGap direction={crossing.direction} from={currentRoom} to={crossing.to} />}
-        {crossing && (
-          <motion.div
-            key={`in-${crossing.to}`}
-            className="absolute inset-0"
-            style={{ translate: ACROSS[crossing.direction] }}
-            initial={false}
             animate={{ x: 0, y: 0, opacity: 1 }}
+            transition={initialLoad ? { duration: 0 } : transitionConfig}
+            onAnimationComplete={onAnimationComplete}
           >
-            <RoomView roomId={crossing.to} onMove={moveFromTile} scrollers={scrollers} />
+            <RoomView roomId={currentRoom} onMove={moveFromTile} scrollers={scrollers} />
           </motion.div>
-        )}
-
-        {/* Current room */}
-        <motion.div
-          key={`in-${currentRoom}`}
-          className="absolute inset-0"
-          initial={
-            initialLoad
-              ? false
-              : transitionDirection
-                ? { ...SLIDE_OFFSETS[transitionDirection], opacity: 1 }
-                : { opacity: 0 }
-          }
-          animate={{ x: 0, y: 0, opacity: 1 }}
-          transition={initialLoad ? { duration: 0 } : transitionConfig}
-          onAnimationComplete={onAnimationComplete}
-        >
-          <RoomView roomId={currentRoom} onMove={moveFromTile} scrollers={scrollers} />
-        </motion.div>
-      </div>
+        </div>
+      </SeatContext>
 
       <Sprite
         ref={spriteRef}
@@ -261,6 +266,8 @@ export default function GridWorld() {
         getScroller={getScroller}
         exitDuration={duration}
         bridge={bridge}
+        props={ROOM_PROPS[currentRoom]}
+        onSeatChange={setSeat}
       />
 
       <Minimap currentRoom={currentRoom} onToggle={() => !crossingRef.current && setIsMapOpen((v) => !v)} />
