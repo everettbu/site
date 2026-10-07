@@ -97,10 +97,10 @@ export function useSpriteMovement(
 
   const { width, height, feet } = box;
 
-  // Place below the centre of the viewport on mount
+  // Start in the centre — where landings and H put him, and in line with the side bridge decks
   useLayoutEffect(() => {
     body.current.x = Math.round((window.innerWidth - width) / 2);
-    body.current.y = Math.round(window.innerHeight / 2 + 48);
+    body.current.y = Math.round((window.innerHeight - height) / 2);
     apply();
     setReady(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
