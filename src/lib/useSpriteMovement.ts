@@ -471,7 +471,9 @@ export function useSpriteMovement(
       if (!isVertical(direction)) updatePose({ facing: direction, action: "tumble", step: Math.floor(ms / FLAIL_MS) });
     });
 
-    b[g.axis] -= g.sign * g.sweep; // into the next room's coordinates
+    // Land in the middle of the next room — measured now, in case the window changed size mid-flight
+    b.x = (window.innerWidth - width) / 2;
+    b.y = (window.innerHeight - height) / 2;
     endBridge(true);
     apply();
   }

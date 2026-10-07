@@ -167,7 +167,8 @@ export default function GridWorld() {
   const moveFromTile = useCallback((d: Direction) => !crossingRef.current && move(d), [move]);
 
   const bridge = {
-    gap: (d: Direction) => crossingGap(currentRoom, d),
+    // Not while a room is still sliding in — the edge then behaves like a short bridge (which waits)
+    gap: (d: Direction) => (isAnimating ? 0 : crossingGap(currentRoom, d)),
     start: (d: Direction) => setCrossing({ direction: d, to: rooms[currentRoom].neighbors[d]! }),
     camera: (offset: number) => {
       const el = cameraRef.current;
@@ -269,7 +270,7 @@ export default function GridWorld() {
         onClose={() => setIsMapOpen(false)}
         onNavigate={handleMapNavigate}
       />
-      <NavigationHint visible={!hasMoved} />
+      <NavigationHint visible={!hasMoved && !crossing} />
       <HomeButton visible={!isHome && hasMoved} onPress={moveToHome} />
     </div>
   );
