@@ -1,4 +1,5 @@
 import { Direction } from "./grid";
+import { Frame } from "./pixelArt";
 import type { SpritePose } from "./useSpriteMovement";
 
 // Placeholder pixel art. Each frame is a grid of palette keys; "." is transparent.
@@ -6,7 +7,6 @@ import type { SpritePose } from "./useSpriteMovement";
 
 export const SPRITE_COLS = 12;
 export const SPRITE_ROWS = 16;
-export const SPRITE_SCALE = 3; // screen px per art px — matches the bridge art
 
 // Collision box around the legs, in art px — the head may overlap walls and railings
 export const SPRITE_FEET = { x: 2, y: 12, w: 8, h: 4 };
@@ -22,7 +22,6 @@ export const SPRITE_PALETTE: Record<string, string> = {
   x: "rgba(43, 42, 51, 0.16)", // ground shadow
 };
 
-export type Frame = readonly string[];
 
 const HEAD_FRONT = [
   "...oooooo...",

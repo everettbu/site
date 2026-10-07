@@ -11,6 +11,7 @@ import MapOverlay from "./MapOverlay";
 import NavigationHint from "./NavigationHint";
 import HomeButton from "./HomeButton";
 import Sprite, { SpriteHandle } from "./Sprite";
+import Water from "./Water";
 import HomeTile from "./tiles/HomeTile";
 import AboutTile from "./tiles/AboutTile";
 import LibraryTile from "./tiles/LibraryTile";
@@ -97,6 +98,7 @@ function RoomView({
   if (!Component) return null;
   return (
     <div className="relative w-[100vw] h-[100dvh]">
+      {rooms[roomId].water && <Water edges={rooms[roomId].water} />}
       <RoomScrollContext value={registerScroller}>
         <Component onMove={onMove} />
       </RoomScrollContext>
@@ -194,6 +196,7 @@ export default function GridWorld() {
         ref={spriteRef}
         disabled={isMapOpen}
         exits={exits}
+        water={rooms[currentRoom].water}
         onExit={move}
         getScroller={getScroller}
         exitDuration={duration}

@@ -27,7 +27,7 @@ export default function LibraryTile({ onMove }: LibraryTileProps) {
       </button>
       <button
         onClick={() => onMove("right")}
-        className="absolute right-[67px] text-xs font-light tracking-widest uppercase text-neutral-400 hover:text-neutral-900 transition-colors cursor-pointer"
+        className="absolute right-[78px] text-xs font-light tracking-widest uppercase text-neutral-400 hover:text-neutral-900 transition-colors cursor-pointer"
       >
         Home
       </button>

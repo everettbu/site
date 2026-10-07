@@ -8,3 +8,20 @@ body {
   overscroll-behavior: none;
   touch-action: none;
 }
+
+/* Water (components/Water.tsx) — crests sway one pixel either side, holding each step */
+@keyframes water-sway {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  25% {
+    transform: translate3d(var(--sway), 0, 0);
+  }
+  50% {
+    transform: translate3d(0, 0, 0);
+  }
+  75% {
+    transform: translate3d(calc(-1 * var(--sway)), 0, 0);
+  }
+}
