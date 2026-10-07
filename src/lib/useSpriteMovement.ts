@@ -110,6 +110,7 @@ export function useSpriteMovement(
   const velocity = useRef({ x: 0, y: 0 }); // px/s — instant on land, eased on a long bridge
   const launchLockedUntil = useRef(0);
   const seat = useRef<SeatState>("empty");
+  const justStood = useRef(false); // got up and hasn't left the chair yet — don't walk straight back into it
 
   // Latest room/callbacks without re-subscribing listeners
   const optionsRef = useRef(options);
@@ -630,6 +631,7 @@ export function useSpriteMovement(
     }
     updatePose({ facing: "down", action: "idle", step: 0 });
     setSeat("empty");
+    justStood.current = true;
   }
 
   // --- Walking --------------------------------------------------------------
@@ -702,8 +704,9 @@ export function useSpriteMovement(
         followCamera(dt);
         const beyond = { x: b.x, y: b.y }; // before the walls clamp him
 
-        // Walked straight into the chair — sit down
-        if (dy < 0 && b.y > wantY && atChair()) {
+        // Walked straight into the chair — sit down (unless he's only just got out of it)
+        if (justStood.current && !atChair()) justStood.current = false;
+        if (dy < 0 && b.y > wantY && !justStood.current && atChair()) {
           held.current = [];
           setSeat("sitting");
         }
@@ -750,6 +753,8 @@ export function useSpriteMovement(
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
       if (e.key === " ") {
+        // Space on a focused button or link should still press it
+        if ((e.target as HTMLElement).closest?.("button, a[href], [role='button'], summary")) return;
         e.preventDefault();
         if (!e.repeat) sitOrRead();
         return;
@@ -778,6 +783,11 @@ export function useSpriteMovement(
       if (longBridge.current) {
         if (!scripted.current) remapBridge(); // a flight across finishes on its own
         return;
+      }
+      // Too narrow for the chair now — it's gone, so he's standing
+      if (seat.current !== "empty" && !optionsRef.current?.props?.seat?.(window.innerWidth, window.innerHeight)) {
+        updatePose({ facing: "down", action: "idle", step: 0 });
+        setSeat("empty");
       }
       clamp();
       apply();
