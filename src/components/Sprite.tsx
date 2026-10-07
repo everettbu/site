@@ -61,6 +61,7 @@ const FrameArt = memo(function FrameArt({ frame }: { frame: Frame }) {
 
 export interface SpriteHandle {
   launch: (direction: Direction) => void;
+  recentre: () => void;
 }
 
 interface SpriteProps {
@@ -72,14 +73,14 @@ interface SpriteProps {
 }
 
 export default function Sprite({ ref, disabled, exits, onExit, exitDuration }: SpriteProps) {
-  const { rootRef, bodyRef, shadowRef, pose, ready, launch } = useSpriteMovement(BOX, {
+  const { rootRef, bodyRef, shadowRef, pose, ready, launch, recentre } = useSpriteMovement(BOX, {
     disabled,
     exits,
     onExit,
     exitDuration,
   });
 
-  useImperativeHandle(ref, () => ({ launch }));
+  useImperativeHandle(ref, () => ({ launch, recentre }));
 
   const { frame, mirror } = getFrame(pose);
 

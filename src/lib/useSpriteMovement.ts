@@ -6,7 +6,7 @@ import { Direction } from "./grid";
 import { Rect, deckSpan, bridgeRailings } from "./bridges";
 import { TRANSITION_EASE } from "./useGridNavigation";
 
-const SPEED = 200; // walking, px per second
+const SPEED = 260; // walking, px per second
 const STRIDE = 14; // px travelled per walk frame
 const FLY_SPEED = 900; // px per second
 const FLY_HEIGHT = 18; // px off the ground in flight
@@ -307,6 +307,19 @@ export function useSpriteMovement(
     });
   }
 
+  /** Back to the middle of the room, in step with the home crossfade. */
+  async function recentre() {
+    if (scripted.current || crossing.current) return;
+    scripted.current = true;
+    updatePose({ facing: "down", action: "idle", step: 0 });
+    await tween(
+      { x: (window.innerWidth - width) / 2, y: (window.innerHeight - height) / 2 },
+      optionsRef.current?.exitDuration ?? 0,
+      TRANSITION_EASE
+    );
+    scripted.current = false;
+  }
+
   // Walking into a bridge: hand over to the next room
   function cross(direction: Direction) {
     if (!optionsRef.current?.onExit?.(direction)) return false;
@@ -428,5 +441,5 @@ export function useSpriteMovement(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disabled]);
 
-  return { rootRef, bodyRef, shadowRef, pose, ready, launch };
+  return { rootRef, bodyRef, shadowRef, pose, ready, launch, recentre };
 }

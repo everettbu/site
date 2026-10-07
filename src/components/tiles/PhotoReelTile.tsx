@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import { Direction } from "@/lib/grid";
 
@@ -103,53 +103,9 @@ function Lightbox({
 
 export default function PhotoReelTile({ onMove }: PhotoReelTileProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const edgeAccum = useRef(0);
-
-  const [scrollable, setScrollable] = useState(false);
-
-  // Disable overflow until the entrance animation finishes
-  useEffect(() => {
-    const timer = setTimeout(() => setScrollable(true), 500);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const atTop = el.scrollTop <= 0;
-    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
-    const scrollingUp = e.deltaY < 0;
-    const scrollingDown = e.deltaY > 0;
-
-    const atEdge = (atTop && scrollingUp) || (atBottom && scrollingDown);
-
-    if (atEdge) {
-      // Accumulate momentum at the edge — only let through after sustained intent
-      edgeAccum.current += Math.abs(e.deltaY);
-      if (edgeAccum.current < 400) {
-        e.stopPropagation();
-        return;
-      }
-      // Threshold met — let event through to grid navigation
-      edgeAccum.current = 0;
-      return;
-    }
-
-    // Not at edge — scroll normally, reset accumulator
-    edgeAccum.current = 0;
-    e.stopPropagation();
-  }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className={`h-full w-full relative ${scrollable ? "overflow-y-auto" : "overflow-hidden"}`}
-      onWheel={handleWheel}
-      onTouchStart={(e) => e.stopPropagation()}
-      onTouchEnd={(e) => e.stopPropagation()}
-    >
+    <div className="h-full w-full relative overflow-hidden">
       {/* Navigation arrow */}
       <button
         onClick={() => onMove("up")}

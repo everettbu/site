@@ -99,6 +99,7 @@ export default function GridWorld() {
   const [isMapOpen, setIsMapOpen] = useState(false);
   const spriteRef = useRef<SpriteHandle>(null);
   const launchSprite = useCallback((d: Direction) => spriteRef.current?.launch(d), []);
+  const recentreSprite = useCallback(() => spriteRef.current?.recentre(), []);
 
   const {
     currentRoom,
@@ -112,7 +113,11 @@ export default function GridWorld() {
     moveTo,
     moveToHome,
     onAnimationComplete,
-  } = useGridNavigation({ disabled: isMapOpen, onSwipe: launchSprite });
+  } = useGridNavigation({
+    disabled: isMapOpen,
+    onSwipe: launchSprite,
+    onHome: recentreSprite,
+  });
 
   const handleMapNavigate = useCallback(
     (roomId: RoomId) => {
