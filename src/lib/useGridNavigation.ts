@@ -15,9 +15,18 @@ const WHEEL_THRESHOLD = 50;
 const WHEEL_TIMEOUT = 200;
 const SWIPE_THRESHOLD = 50;
 const ANIMATION_DURATION = 0.4;
+export const TRANSITION_EASE = [0.25, 0.1, 0.25, 1.0] as const;
 
-export function useGridNavigation(options?: { disabled?: boolean }) {
+export function useGridNavigation(options?: {
+  disabled?: boolean;
+  /** Handles swipes / scrolls instead of moving rooms directly (the sprite launches) */
+  onSwipe?: (direction: Direction) => void;
+  /** Called on every home request (H / home button), even when already home */
+  onHome?: () => void;
+}) {
   const disabled = options?.disabled ?? false;
+  const onSwipe = options?.onSwipe;
+  const onHome = options?.onHome;
   const reducedMotion = useReducedMotion();
   const [currentRoom, setCurrentRoom] = useState<RoomId>(DEFAULT_ROOM);
   const [previousRoom, setPreviousRoom] = useState<RoomId | null>(null);
@@ -35,12 +44,13 @@ export function useGridNavigation(options?: { disabled?: boolean }) {
 
   const duration = reducedMotion ? 0 : ANIMATION_DURATION;
 
+  /** Returns true if a transition started. */
   const move = useCallback(
-    (direction: Direction) => {
-      if (isAnimatingRef.current) return;
+    (direction: Direction): boolean => {
+      if (isAnimatingRef.current) return false;
 
       const next = getNextRoom(currentRoom, direction);
-      if (!next) return;
+      if (!next) return false;
 
       if (!hasMoved) setHasMoved(true);
 
@@ -52,12 +62,14 @@ export function useGridNavigation(options?: { disabled?: boolean }) {
 
       const hash = rooms[next].hash;
       window.history.replaceState(null, "", hash || window.location.pathname);
+      return true;
     },
     [currentRoom, hasMoved]
   );
 
   const moveToHome = useCallback(() => {
     if (isAnimatingRef.current) return;
+    onHome?.();
     if (currentRoom === DEFAULT_ROOM) return;
 
     if (!hasMoved) setHasMoved(true);
@@ -68,7 +80,7 @@ export function useGridNavigation(options?: { disabled?: boolean }) {
     setTransitionDirection(null); // null signals crossfade
     setCurrentRoom(DEFAULT_ROOM);
     window.history.replaceState(null, "", window.location.pathname);
-  }, [currentRoom, hasMoved]);
+  }, [currentRoom, hasMoved, onHome]);
 
   const moveTo = useCallback(
     (targetRoom: RoomId) => {
@@ -142,13 +154,13 @@ export function useGridNavigation(options?: { disabled?: boolean }) {
         }
         wheelAccX.current = 0;
         wheelAccY.current = 0;
-        move(direction);
+        (onSwipe ?? move)(direction);
       }
     };
 
     window.addEventListener("wheel", handleWheel, { passive: false });
     return () => window.removeEventListener("wheel", handleWheel);
-  }, [move, disabled]);
+  }, [move, onSwipe, disabled]);
 
   // Keyboard handler
   useEffect(() => {
@@ -157,45 +169,16 @@ export function useGridNavigation(options?: { disabled?: boolean }) {
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
-      let direction: Direction | null = null;
-
-      switch (e.key) {
-        case "ArrowUp":
-        case "w":
-        case "W":
-          direction = "up";
-          break;
-        case "ArrowDown":
-        case "s":
-        case "S":
-          direction = "down";
-          break;
-        case "ArrowLeft":
-        case "a":
-        case "A":
-          direction = "left";
-          break;
-        case "ArrowRight":
-        case "d":
-        case "D":
-          direction = "right";
-          break;
-        case "h":
-        case "H":
-          e.preventDefault();
-          moveToHome();
-          return;
-      }
-
-      if (direction) {
+      // Arrow keys / WASD belong to the sprite (useSpriteMovement)
+      if (e.key === "h" || e.key === "H") {
         e.preventDefault();
-        move(direction);
+        moveToHome();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [move, moveToHome, disabled]);
+  }, [moveToHome, disabled]);
 
   // Touch handler
   useEffect(() => {
@@ -225,7 +208,7 @@ export function useGridNavigation(options?: { disabled?: boolean }) {
         direction = dy < 0 ? "down" : "up";
       }
 
-      move(direction);
+      (onSwipe ?? move)(direction);
     };
 
     window.addEventListener("touchstart", handleTouchStart, { passive: true });
@@ -234,7 +217,7 @@ export function useGridNavigation(options?: { disabled?: boolean }) {
       window.removeEventListener("touchstart", handleTouchStart);
       window.removeEventListener("touchend", handleTouchEnd);
     };
-  }, [move, disabled]);
+  }, [move, onSwipe, disabled]);
 
   return {
     currentRoom,
